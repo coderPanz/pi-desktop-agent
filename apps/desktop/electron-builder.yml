@@ -1,0 +1,25 @@
+# 打包配置（阶段 5 末尾冒烟，阶段 8 复验）。
+# main / preload / renderer 都由 esbuild 与 Vite 打包，运行时不需要 node_modules，
+# 所以显式排除它——避免把 pnpm 的符号链接结构塞进 asar。
+appId: com.piagent.desktop
+productName: Pi Agent Desktop
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+asar: true
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+
+win:
+  target:
+    - nsis

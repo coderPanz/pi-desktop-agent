@@ -1,0 +1,13 @@
+{
+  "name": "@pi/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/main.ts" },
+  "dependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@pi/core": "workspace:*",
+    "@pi/shared-types": "workspace:*"
+  }
+}

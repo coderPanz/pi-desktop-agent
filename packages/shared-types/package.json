@@ -1,0 +1,11 @@
+{
+  "name": "@pi/shared-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "typebox": "1.3.27"
+  }
+}
