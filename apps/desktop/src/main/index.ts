@@ -6,6 +6,7 @@
  * 以及 before-quit 里「先停推送、再 await host.close()」的退出顺序。
  */
 import path from "node:path"
+// `file://` 协议的 URL 对象 / 字符串，转换为操作系统原生的绝对文件路径
 import { fileURLToPath } from "node:url"
 
 import { app, BrowserWindow } from "electron"
