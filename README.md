@@ -49,7 +49,7 @@
 │  ├─ shared-types/           两端共用契约与纯函数（禁依赖 pi-durable）—— S5 起
 │  ├─ shared-docs/            defineDoc / defineEntry —— S5 起
 │  └─ extensions/             coding（S2）、kb（S7）、toolsmith（S8）、smartui（S9）
-├─ verify/                    阶段验收脚本（不打包、不进发布产物）
+├─ docs/verify/               阶段验收脚本归档（非产品代码，不打包、不 typecheck）
 ├─ docs/知识中心/              施工图：架构、SDK 参考、API、阶段 0–9
 ├─ AGENT.md                   项目约定（尤其 notes/ 的原子笔记规则）
 ├─ 技术方案二.md               V1 工程方案（为什么这么搭）
@@ -65,7 +65,7 @@
 ```bash
 pnpm install          # 首次：会下载 Electron 二进制（见下方「网络」）
 cp .env.example .env  # 填入 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL
-pnpm stage0           # 阶段 0 验收（G0）
+pnpm stage0           # 阶段 0 验收（G0，跑的是 docs/verify 下的归档脚本）
 pnpm gate             # 存储门禁 G2：Electron 里的 Node 版本 + node:sqlite
 pnpm dev              # 开发模式：Vite dev server + esbuild watch + Electron
 pnpm build            # 构建 dist/{main,preload,renderer}

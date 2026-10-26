@@ -9,7 +9,7 @@
   },
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "stage0": "tsx --env-file-if-exists=.env verify/stage0-min-agent.ts",
+    "stage0": "tsx --env-file-if-exists=.env docs/verify/stage0-min-agent.ts",
     "cli": "tsx --env-file-if-exists=.env apps/cli/src/main.ts",
     "dev": "pnpm --filter @pi/desktop dev",
     "build": "pnpm --filter @pi/desktop build",

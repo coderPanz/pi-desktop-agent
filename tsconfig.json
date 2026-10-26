@@ -4,7 +4,6 @@
     "types": ["node"]
   },
   "include": [
-    "verify/**/*.ts",
     "packages/**/*.ts",
     "apps/cli/src/**/*.ts"
   ]
