@@ -3,7 +3,7 @@
 一个**本机 Agent 工作台**：对话、工具执行、知识沉淀、界面状态全部落在本机一个可恢复的存储里。
 模型在你自己的文件与命令上干活，而你能随时打断、重启、追溯。
 
-> 工程方案：[技术方案二.md](./技术方案二.md) ｜ 执行手册：[开发步骤.md](./开发步骤.md) ｜ 施工图：[docs/知识中心/V1开发路线.md](./docs/知识中心/V1开发路线.md)
+> 工程方案：[docs/技术方案.md](./docs/技术方案.md) ｜ 执行手册：[docs/开发步骤.md](./docs/开发步骤.md) ｜ 施工图：[docs/知识中心/V1开发路线.md](./docs/知识中心/V1开发路线.md)
 
 ## 一期定位（摘要）
 
@@ -18,7 +18,7 @@
 
 | 阶段 | 主题 | 状态 |
 |---|---|---|
-| S0 | 工作区与最小 Agent 调用 | ✅ `pnpm stage0` 通过 |
+| S0 | 工作区与最小 Agent 调用 | ✅ 归档脚本 G0 六项通过（命令见「运行」） |
 | — | 存储门禁 G2（`node:sqlite`） | ✅ `pnpm gate` 通过（Electron 45 / Node 24.22） |
 | — | 桌面壳 + preload 桥接 + 构建链 | ✅ 已冒烟（渲染进程加载、`window.pi` 注入、隔离生效） |
 | S1 | 流式输出与状态订阅 | ⬜ 下一步 |
@@ -49,11 +49,13 @@
 │  ├─ shared-types/           两端共用契约与纯函数（禁依赖 pi-durable）—— S5 起
 │  ├─ shared-docs/            defineDoc / defineEntry —— S5 起
 │  └─ extensions/             coding（S2）、kb（S7）、toolsmith（S8）、smartui（S9）
-├─ docs/verify/               阶段验收脚本归档（非产品代码，不打包、不 typecheck）
-├─ docs/知识中心/              施工图：架构、SDK 参考、API、阶段 0–9
-├─ AGENT.md                   项目约定（尤其 notes/ 的原子笔记规则）
-├─ 技术方案二.md               V1 工程方案（为什么这么搭）
-└─ 开发步骤.md                 实现流程（今天做什么、跑哪条命令、什么算做完）
+├─ docs/                      文档与证据（不打包、不 typecheck、不 lint）
+│  ├─ 技术方案.md              V1 工程方案（为什么这么搭）
+│  ├─ 开发步骤.md              实现流程（今天做什么、跑哪条命令、什么算做完）
+│  ├─ 知识中心/                施工图：架构、SDK 参考、API、阶段 0–9
+│  ├─ notes/                   原子笔记（durable/、node/）
+│  └─ verify/                  阶段验收脚本归档（stage0 在此，prestudy/ 为学习期脚本）
+└─ AGENT.md                   项目约定（尤其 notes/ 的原子笔记规则）
 ```
 
 依赖方向只能向下：`renderer → shared-types`、`main → core → pi-durable`。
@@ -65,16 +67,23 @@
 ```bash
 pnpm install          # 首次：会下载 Electron 二进制（见下方「网络」）
 cp .env.example .env  # 填入 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL
-pnpm stage0           # 阶段 0 验收（G0，跑的是 docs/verify 下的归档脚本）
-pnpm gate             # 存储门禁 G2：Electron 里的 Node 版本 + node:sqlite
+
 pnpm dev              # 开发模式：Vite dev server + esbuild watch + Electron
 pnpm build            # 构建 dist/{main,preload,renderer}
-pnpm typecheck        # tsc --noEmit（根 + apps/desktop 两套配置）
+pnpm start            # 跑已构建的产物（需先 build）
+pnpm gate             # 存储门禁 G2：Electron 里的 Node 版本 + node:sqlite
+pnpm cli              # 无头终端入口（S3 起可用）
+pnpm typecheck        # 两套 tsconfig：Node 侧 + desktop 侧
 pnpm lint             # ESLint（含两条导入边界）
 ```
 
-`pnpm stage0` 的通过口径：非空回答、模型一致、同一 `requestId` 命中同一条 submission、
-`close()` 前无 running 任务、进程自然退出。
+归档在 `docs/verify/` 的阶段脚本不属于产品入口，直接跑：
+
+```bash
+pnpm exec tsx --env-file-if-exists=.env docs/verify/stage0-min-agent.ts
+```
+
+通过口径：非空回答、模型一致、同一 `requestId` 命中同一条 submission、`close()` 前无 running 任务、进程自然退出。
 
 ## 版本基线（精确锁定）
 

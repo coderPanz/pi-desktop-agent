@@ -10,4 +10,4 @@
  *   render.ts    帧 → 终端输出（convId 前缀，只打文本与工具摘要）
  *   args.ts      --data-dir / --memory / --partial-interval-ms
  */
-console.log("apps/cli 将在阶段 3 落地（SessionManager + REPL）。当前阶段请用：pnpm stage0")
+console.log("apps/cli 将在阶段 3 落地（SessionManager + REPL）。")

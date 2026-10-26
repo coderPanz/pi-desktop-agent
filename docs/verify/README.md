@@ -16,11 +16,12 @@
 | `stage0-min-agent.ts` | 最小 Agent 调用：`submit → wait → entries → inspect → close`，六项断言 |
 | `lib/models.ts` | 自建 gateway provider（Anthropic Messages 协议），阶段 0 的模型入口 |
 | `lib/assert.ts` | `check`（硬断言）/ `observe`（软观察）/ `report` |
+| `prestudy/` | 更早的学习期脚本（`00-min-agent` … `04-durable`、coding 扩展草稿），仅作参考，不保证能跑 |
 
 ## 怎么跑
 
 ```bash
-pnpm stage0            # 等价于：tsx --env-file-if-exists=.env docs/verify/stage0-min-agent.ts
+pnpm exec tsx --env-file-if-exists=.env docs/verify/stage0-min-agent.ts
 ```
 
 后续阶段的验收脚本也放这里，命名保持 `stage<N>-<主题>.ts`；纯函数的单测不放这里，直接与实现同包（`*.test.ts`）。

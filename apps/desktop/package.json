@@ -6,6 +6,7 @@
   "main": "./dist/main/index.mjs",
   "scripts": {
     "dev": "tsx build/build.ts --dev",
+    "start": "electron .",
     "build": "tsx build/build.ts",
     "gate": "tsx build/build.ts --gate",
     "package": "pnpm build && electron-builder"
@@ -16,10 +17,6 @@
     "@earendil-works/pi-durable": "1.4.0",
     "@jboltai/tokui": "0.2.8",
     "@pi/core": "workspace:*",
-    "@pi/ext-coding": "workspace:*",
-    "@pi/ext-kb": "workspace:*",
-    "@pi/ext-smartui": "workspace:*",
-    "@pi/ext-toolsmith": "workspace:*",
     "@pi/shared-docs": "workspace:*",
     "@pi/shared-types": "workspace:*",
     "react": "19.3.1",
