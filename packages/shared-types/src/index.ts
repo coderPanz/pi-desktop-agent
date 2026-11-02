@@ -3,7 +3,7 @@
  *
  * 主进程、preload、渲染进程都只从这一份定义读类型；SDK 类型一律 import type，不重复声明。
  *
- * 规划模块（见 技术方案二.md §4.1 / §7）：
+ * 规划模块（见 docs/知识中心/技术方案.md §4.1 / §7）：
  *   S1→S5  frame.ts   applyFrame / isBase / ViewFrame / DocFrame
  *   S5     ipc.ts     IpcMap（请求/响应）
  *   S5     push.ts    PushMap：view / doc / task.graph / host.status

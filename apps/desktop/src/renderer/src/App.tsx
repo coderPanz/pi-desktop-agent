@@ -1,10 +1,9 @@
 /**
- * 骨架页。存在的意义是证明三件事同时成立：
+ * 骨架页
  *   1. Electron 加载了渲染进程（本地文件 / dev server）；
  *   2. preload 的 contextBridge 注入成功（sandbox: true 下仍然可用）；
  *   3. React 19 + Tailwind 4 的构建链路可用。
  *
- * 阶段 6 会用真正的聊天界面替换它（ChatView + MessageList + Composer）。
  */
 const bridgeResult: string = window.pi?.debug.ping() ?? "未注入（preload 未生效）"
 
@@ -59,7 +58,7 @@ export function App() {
         </section>
 
         <p className="mt-8 text-xs text-[#4b5563]">
-          方案与验收门见 <span className="text-[#6b7280]">技术方案二.md</span>；
+          方案与验收门见 <span className="text-[#6b7280]">docs/知识中心/技术方案.md</span>；
           施工图见 <span className="text-[#6b7280]">docs/知识中心/V1开发路线.md</span>。
         </p>
       </div>

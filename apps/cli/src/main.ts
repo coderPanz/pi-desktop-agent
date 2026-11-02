@@ -1,5 +1,5 @@
 /**
- * @pi/cli — 无 Electron 的终端入口（阶段 3 落地）。
+ * @pi/cli — 无 Electron 的终端入口：  apps/cli 是这个项目的无 Electron 终端入口，定位不是最终面向普通用户的桌面 UI，而是用于开发、验收与排障
  *
  * 存在的理由：不启动 Electron 就能复现「排队 / 中断 / 分叉 / 恢复」这类问题，
  * 也让阶段 3–4 的验收与阶段 5 的 IPC 共用同一套 SessionManager。
@@ -10,4 +10,4 @@
  *   render.ts    帧 → 终端输出（convId 前缀，只打文本与工具摘要）
  *   args.ts      --data-dir / --memory / --partial-interval-ms
  */
-console.log("apps/cli 将在阶段 3 落地（SessionManager + REPL）。")
+

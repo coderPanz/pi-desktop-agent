@@ -1,7 +1,7 @@
 /**
  * @pi/shared-docs — defineDoc / defineEntry 定义，只在主进程 import。
  *
- * 规划模块（见 技术方案二.md §6.2）：
+ * 规划模块（见 docs/知识中心/技术方案.md §6.2）：
  *   S5  settings.ts   app.settings（session, latest）
  *   S5  approvals.ts  app.approvals（conversation, latest）
  *   S5  entries.ts    defineEntry：app.ui_action / app.approval

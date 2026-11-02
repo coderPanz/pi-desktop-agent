@@ -1,16 +1,13 @@
+// `contextIsolation: true`：渲染页面 JS 和 preload JS 是**两个隔离的上下文**，不能直接互相访问，`contextBridge` 就是二者唯一的桥梁。
 import { contextBridge } from "electron"
 
 /**
- * preload 只做「通道映射 + 类型收窄」，不写业务逻辑。
- *
- * 现在只暴露一个 ping，用来验证 contextBridge + sandbox 链路是否通。
- * 阶段 5 起按 技术方案二.md §7 增加 conv.* / doc.* / settings.*，
- * 规矩不变：只暴露具体方法（不暴露 ipcRenderer），每个 on* 必须返回 unsubscribe。
+ * 通过 `contextBridge` 向渲染层暴露一个叫 `pi` 的 API
  */
 const api = {
   debug: {
     ping: (): string => "pong",
   },
 }
-
+// 挂载到渲染层的 window 对象上
 contextBridge.exposeInMainWorld("pi", api)

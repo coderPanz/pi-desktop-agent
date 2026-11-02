@@ -1,22 +1,22 @@
 /**
- * 存储门禁（G2）。必须跑在 Electron 的 Node 运行时里，不能只在系统 Node 上验。
- *
- * 通过 → 阶段 5 可以用 node:sqlite；
- * 不通过 → 立刻停下，改用 better-sqlite3 适配 chord 的 SqliteDatabase 六方法
- *          （exec / run / get / all / transaction / close），再交给 SqliteStorage.open(db)。
+ * 存储验证
+ * pi-durable 的 openNodeSqliteStorage 用的是 Node 内置的 node:sqlite，过了才允许继续做持久化，不通过就立刻改用 better-sqlite3   
+ 适配器
  */
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import path from "node:path"
+import { mkdtempSync, rmSync } from "node:fs" // 创建临时目录和删除文件
+import { tmpdir } from "node:os" // 获取临时目录路径
+import path from "node:path" // 路径处理
 
 import { app } from "electron"
 
-const REQUIRED_NODE_MAJOR = 22
+const REQUIRED_NODE_MAJOR = 22 // node 版本
 
+// 打印结果
 function line(ok: boolean, label: string, detail = ""): void {
   console.log(`${ok ? "✓" : "✗"} ${label}${detail ? `｜${detail}` : ""}`)
 }
 
+// 运行验证
 async function runGate(): Promise<boolean> {
   console.log("运行时：", {
     electron: process.versions.electron,
@@ -54,8 +54,8 @@ app.whenReady().then(async () => {
   const ok = await runGate()
   console.log(
     ok
-      ? "\n门禁通过：可以继续阶段 5（SqliteStorage 直接用 node:sqlite）。"
-      : "\n门禁失败：按 技术方案二.md §15 G2 的兜底方案，写 better-sqlite3 适配器。",
+      ? "\n存储验证通过：可直接使用 node:sqlite 进行持久化。"
+      : "\n存储验证失败：需要使用 better-sqlite3 适配器。",
   )
   app.exit(ok ? 0 : 1)
 })
