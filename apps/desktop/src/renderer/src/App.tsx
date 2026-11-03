@@ -58,8 +58,8 @@ export function App() {
         </section>
 
         <p className="mt-8 text-xs text-[#4b5563]">
-          方案与验收门见 <span className="text-[#6b7280]">docs/知识中心/技术方案.md</span>；
-          施工图见 <span className="text-[#6b7280]">docs/知识中心/V1开发路线.md</span>。
+          架构与决策见 <span className="text-[#6b7280]">docs/知识中心/技术方案.md</span>；
+          路线图见 <span className="text-[#6b7280]">docs/知识中心/ROADMAP.md</span>。
         </p>
       </div>
     </main>

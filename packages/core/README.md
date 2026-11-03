@@ -17,17 +17,19 @@
 
 ## 模块地图
 
-`src/index.ts` 是唯一入口（`package.json` 的 `exports` 只有 `"."`），内部 11 个模块：
+`src/index.ts` 是唯一入口（`package.json` 的 `exports` 只有 `"."`），内部 13 个模块：
 
 | 模块 | 职责 | 关键点 |
 |---|---|---|
 | `agent/models.ts` | gateway provider + `createModelRegistry` / `pickModel` | `PROVIDER_ID = "gateway"` 是落盘契约；凭证走 `envApiKeyAuth`，**每次请求**解析，换 key 不必重建 |
-| `agent/env.ts` | `NodeExecutionEnv` 工厂 | 每次使用新建，不缓存（见 [17 号笔记](../../docs/notes/durable/17.%20为什么每次调用都新建%20NodeExecutionEnv.md)） |
+| `agent/env.ts` | `NodeExecutionEnv` 工厂 | 每次使用新建、不缓存（原因见 [17 号笔记](../../docs/notes/durable/17.%20为什么每次调用都新建%20NodeExecutionEnv.md)） |
 | `session/manager.ts` | 会话操作：`list/select/create/submit/abort/fork/reset/compact/inbox/isBusy/contextView/entries/view` | 只返回数据、不打印；**不缓存 Conversation 句柄**，也不保存聊天记录 |
 | `paths.ts` | `workspacePaths` / `ensureWorkspacePaths` | 根由调用方注入；只算路径 + 建目录，不建库 |
+| `errors.ts` | `UserError` / `ConfigError` | 与 SDK 的 `SessionFailed` 分工：前者可继续，后者必须重建 Harness |
 | `storage/create-storage.ts` | 文件库（`node:sqlite`，WAL）/ 内存库 | **失败不降级**到内存库；一个库文件只允许一个 Harness |
 | `harness/open-harness.ts` | `storage → Harness.open → resume → root` | 顺序是验收口径；把顺序写死，调用方只提供零件 |
 | `harness/host.ts` | `HarnessHost` | 唯一有内部依赖的文件；`#closing ??=` 保证 `close()` 幂等 |
+| `harness/materialize.ts` | `materializeView` | SDK 视图 → `@pi/shared-types` 的副本结构；坏条目/坏文档丢弃而不抛错 |
 | `harness/registry.ts` | `createPiRegistry` / `summarizeRegistry` | 内置扩展由调用方注入（现在默认装 0 个，是刻意的）；注册表可热改 |
 | `frames/frame-hub.ts` | 多会话 `watch → seq → sink` | `open()` 不重放历史；每会话一条单调 seq；慢 sink 不阻塞回调 |
 | `diagnostics/inspect.ts` | `inspectHarness` | 脱敏：不带 input / 工具参数 / 模型消息 / 堆栈 |
@@ -153,9 +155,9 @@ core 内部只有**一条**内部依赖边：`harness/host.ts → harness/open-h
 - `agent/credentials.ts`——凭证存储（现在只有 `envApiKeyAuth` 环境变量）
 - `frames/doc-hub.ts`——文档帧（FrameHub 现在只推 `ConversationView`）
 
-## 延伸阅读
+## 相关文档
 
-- 按文件读：[`阅读顺序.md`](./阅读顺序.md)（4 轮、约 2 小时，含每段该抓什么）
-- 工程方案：[`docs/知识中心/技术方案.md`](../../docs/知识中心/技术方案.md) —— §4.1 文件结构、§5 关键设计决策（D1–D14）
-- 概念笔记：[`docs/notes/durable/`](../../docs/notes/durable/)——`ctx`、帧、ops、watch、调用流程、`NodeExecutionEnv` 等
-- 项目约定：[`AGENT.md`](../../AGENT.md)
+- 架构与决策：[`docs/知识中心/技术方案.md`](../../docs/知识中心/技术方案.md) —— §4.1 文件结构、§5 关键设计决策（D1–D14）
+- 现状与待办：[`docs/知识中心/ROADMAP.md`](../../docs/知识中心/ROADMAP.md)
+- 原子笔记：[`docs/notes/durable/`](../../docs/notes/durable/) —— `ctx`、帧与 ops、watch、调用流程、`NodeExecutionEnv` 等
+- 工程约定：[`AGENT.md`](../../AGENT.md)
