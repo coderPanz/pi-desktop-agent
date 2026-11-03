@@ -2,26 +2,30 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # 四个长期分支都要跑：develop 集成、test 测试、gray 灰度、main 稳定。
+    branches: [main, develop, test, gray]
   pull_request:
 
-# 同一个分支的新推送取消旧任务，避免排队。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # 必须是真实发布的 Node 版本（nodejs.org/dist）。注意别和 `@types/node` 的版本号搞混。
+  NODE_VERSION: "22.23.4"
 
 jobs:
   verify:
     name: typecheck / lint / test / smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22.20.5
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       # 这些检查不需要 Electron 二进制，跳过下载能省一分钟以上。
@@ -49,24 +53,23 @@ jobs:
     name: build desktop shell
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22.20.5
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      # 主进程构建脚本要读 Electron 可执行文件路径，所以这个任务必须真下载二进制。
+      # 主进程构建脚本要读 Electron 可执行文件的路径，所以这个任务必须真下载二进制。
       - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build
 
-      - name: Upload dist
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-dist
           path: apps/desktop/dist
