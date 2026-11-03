@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一个分支的新推送取消旧任务，避免排队。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck / lint / test / smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.5
+          cache: pnpm
+
+      # 这些检查不需要 Electron 二进制，跳过下载能省一分钟以上。
+      # 需要二进制的检查在下面的 desktop 任务里单独跑。
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      # 端到端冒烟：真实装配 storage → open → resume → root，跑一遍 REPL 命令。
+      # 不联网、不需要模型凭证（--memory + 只有 /list /new 这类无模型操作）。
+      - name: Smoke
+        run: pnpm smoke
+
+  desktop:
+    name: build desktop shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.5
+          cache: pnpm
+
+      # 主进程构建脚本要读 Electron 可执行文件路径，所以这个任务必须真下载二进制。
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-dist
+          path: apps/desktop/dist
+          retention-days: 7

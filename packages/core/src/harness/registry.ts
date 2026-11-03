@@ -1,7 +1,8 @@
 /**
  * 注册表的安装和配置：一个进程一个 Registry，内置扩展按安装顺序装进去
  *
- * 现在内置扩展包（`@pi/ext-*`）还是空壳，所以默认装 0 个
+ * 扩展由调用方注入：`packages/extensions/*` 目前都是空包，所以默认装 0 个。
+ * 这不是缺陷——core 不该知道具体有哪些工具，装什么由宿主决定。
  * 注册表可以边跑边改（`install` / `uninstall` 立即发布），所以自举【项目特色】工具的热替换不需要重开 Harness
  */
 import { createRegistry } from "@earendil-works/pi-durable" // 创建注册表

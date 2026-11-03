@@ -22,6 +22,8 @@
  *
  * 不提前写用不到的抽象：没有第二个实现就不建接口。
  */
+export { ConfigError, UserError } from "./errors.ts"
+
 export {
   createGatewayModel,
   createModelRegistry,
@@ -56,7 +58,8 @@ export { createPiRegistry, summarizeRegistry } from "./harness/registry.ts"
 export type { RegistryOptions, RegistrySummary } from "./harness/registry.ts"
 
 export { FrameHub } from "./frames/frame-hub.ts"
-export type { FrameHubOptions, FrameSink, OpenedFrame, ViewFrame } from "./frames/frame-hub.ts"
+export type { FrameHubOptions, FrameSink, OpenedFrame } from "./frames/frame-hub.ts"
+export { materializeView } from "./harness/materialize.ts"
 
 export { inspectHarness } from "./diagnostics/inspect.ts"
 export type {

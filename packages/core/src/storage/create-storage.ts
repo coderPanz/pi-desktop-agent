@@ -10,8 +10,6 @@ import path from "node:path"
 
 import type { Storage } from "@earendil-works/pi-durable"
 import { MemoryStorage } from "@earendil-works/pi-durable" // 内存存储
-// pi-durable 提供的 Node.js SQLite 适配器：按路径打开/创建数据库文件，并返回统一的 Storage 接口。
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node"
 
 /** 
  * SQLite 底层运行参数：主要处理数据库暂时被占用 和 WAL 日志文件如何整理
@@ -40,6 +38,8 @@ export async function createStorage(
   if (target.kind === "memory") return new MemoryStorage()
 
   await mkdir(path.dirname(target.file), { recursive: true }) // 创建 SQLite 文件所在的目录
+  // 按需加载：内存库路径（测试、`--memory`）不该把 `node:sqlite` 拉进进程。
+  const { openNodeSqliteStorage } = await import("@earendil-works/pi-durable/storage/sqlite/node")
   return await openNodeSqliteStorage(target.file, {
     // 打开 SQLite 数据库
     busyTimeoutMs: options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS, // 数据库被占用时，最多要等多久（ms）

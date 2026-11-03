@@ -1,9 +1,9 @@
 /**
- * @pi/ext-kb —  *   S7  wiki/{paths,frontmatter,index-writer,log,search}.ts、
- *       tools/{kb-search,kb-read,kb-ingest,kb-lint}.ts、tasks/ingest.ts（app.kb.ingest）
- * raw/ 只读、wiki/ 可重建；ingest 是 Task 不是 Tool（分钟级、可中断、可从检查点续跑）。
+ * @pi/ext-kb — 本地知识库（未实现）。
  *
- * 规划模块（见 docs/知识中心/技术方案.md §4.1）：
-
+ * 规划中的工具：kb_search / kb_read / kb_ingest / kb_lint；ingest 是 Task 而不是 Tool
+ * （分钟级、可中断、可从检查点续跑）。约定：raw/ 只读、wiki/ 可重建。
+ *
+ * 设计见 docs/知识中心/技术方案.md 阶段 7。
  */
 export {}

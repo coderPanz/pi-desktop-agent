@@ -43,7 +43,7 @@ test("open 不重放历史：给出当前 value 与 seq 0", async () => {
     assert.equal(opened.seq, 0)
     assert.equal(opened.convId, ROOT_CONVERSATION_ID)
     // 历史条目已在 value 里，但不是「补推的帧」。
-    assert.equal(opened.value.entries.length, 1)
+    assert.equal(opened.snapshot.entries.length, 1)
   } finally {
     await hub.closeAll()
     await host.close()
@@ -89,7 +89,7 @@ test("重复 open 不新建 watch：seq 续着走", async () => {
 
     const again = await hub.open(ROOT_CONVERSATION_ID, ctx)
     assert.equal(again.seq, 1)
-    assert.equal(again.value.entries.length, 1)
+    assert.equal(again.snapshot.entries.length, 1)
 
     await appendNote(host, 2)
     await waitFor(() => frames.length === 2)

@@ -17,9 +17,10 @@
     "package": "pnpm --filter @pi/desktop package",
     "gate": "pnpm --filter @pi/desktop gate",
     "cli": "tsx --env-file-if-exists=.env apps/cli/src/main.ts",
-    "test": "node --import tsx --test \"packages/core/src/**/*.test.ts\"",
+    "test": "node --import tsx --test \"packages/*/src/**/*.test.ts\" \"apps/cli/src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/desktop/tsconfig.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "smoke": "node -e \"process.stdout.write('/list\\n/new\\n/list\\n/quit\\n')\" | tsx --env-file-if-exists=.env apps/cli/src/main.ts --memory"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.4.0",

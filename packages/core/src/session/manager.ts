@@ -9,6 +9,9 @@
 
 // pi-durable 的 API 都要传 context；这里没特殊需求，默认传 BACKGROUND_CONTEXT 即可
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
+import type { ConversationSummary } from "@pi/shared-types"
+
+import { UserError } from "../errors.ts"
 import type { Context } from "@earendil-works/chord"
 // InboxDoc / LiveDoc 是 durable 【已提交】的会话状态：排队消息和当前运行状态。
 import {
@@ -21,7 +24,6 @@ import type {
   CompactionResult,
   Conversation,
   ConversationId,
-  ConversationRecord,
   ConversationWatch,
   ContextView,
   EntryId,
@@ -48,15 +50,11 @@ export function defaultQueueModes(): QueueModes {
   return { steeringMode: DEFAULT_QUEUE_MODE, followUpMode: DEFAULT_QUEUE_MODE }
 }
 
-// 会话摘要
-export type ConversationSummary = {
-  readonly id: ConversationId
-  readonly parent: ConversationRecord["parent"] // 父会话记录：含 父会话 id - 条目 id
-  /**  是否忙碌：`pi.live.run` 存在即为忙。 */
-  readonly busy: boolean
-  /** 排队条目数：`pi.inbox` 里排队的条目数。 */
-  readonly queued: number
-}
+/**
+ * 会话摘要的形状由 `@pi/shared-types` 定义（渲染进程也要用），这里只做转出。
+ * 两边形状若不一致，编译期就会报错——这正是把契约放在代码里的目的。
+ */
+export type { ConversationSummary } from "@pi/shared-types"
 
 // 会话管理器选项
 export type SessionManagerOptions = {
@@ -107,7 +105,7 @@ export class SessionManager {
 
     // 额外查一次，避免调用方传入一个不存在的 conversationId。
     const conversation = await options.harness.conversation(id, context)
-    if (conversation === undefined) throw new Error(`会话不存在：${String(id)}`)
+    if (conversation === undefined) throw new UserError(`会话不存在：${String(id)}`)
     return new SessionManager(id, options)
   }
 
@@ -175,7 +173,7 @@ export class SessionManager {
   ): Promise<Conversation> {
     // 取到的是操作该会话的轻量句柄，状态仍存于 Storage
     const conversation = await this.#harness.conversation(id, context)
-    if (conversation === undefined) throw new Error(`会话不存在：${String(id)}`)
+    if (conversation === undefined) throw new UserError(`会话不存在：${String(id)}`)
     this.#conversationId = id
     return conversation
   }
@@ -347,7 +345,7 @@ export class SessionManager {
       context,
     )
 
-    if (conversation === undefined) throw new Error(`会话不存在：${String(conversationId)}`)
+    if (conversation === undefined) throw new UserError(`会话不存在：${String(conversationId)}`)
   
     // watch 先给当前完整 ConversationView，之后持续给每次已提交变更；必须 stop() 释放订阅
     const watch = await conversation.watch(context)
@@ -368,7 +366,7 @@ export class SessionManager {
       this.#conversationId,
       context,
     )
-    if (conversation === undefined) throw new Error(`会话不存在：${String(this.#conversationId)}`)
+    if (conversation === undefined) throw new UserError(`会话不存在：${String(this.#conversationId)}`)
     return conversation
   }
 
@@ -397,7 +395,7 @@ export class SessionManager {
       context,
     )
     const entry = page.items[0]
-    if (entry === undefined) throw new Error("当前会话没有可 fork 的条目：请先发一条消息。")
+    if (entry === undefined) throw new UserError("当前会话没有可 fork 的条目：请先发一条消息。")
     return entry.id
   }
 }

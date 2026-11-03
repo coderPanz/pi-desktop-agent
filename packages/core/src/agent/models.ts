@@ -14,6 +14,8 @@ import {
 } from "@earendil-works/pi-ai"
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy"
 
+import { ConfigError } from "../errors.ts"
+
 /** provider 标识 */
 export const PROVIDER_ID = "gateway"
 
@@ -40,7 +42,7 @@ const MODEL_NAMES: Record<string, string> = { // Record ts 内置用于分别定
 /** 从环境变量读网关配置 */
 export function gatewayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const modelId = env.ANTHROPIC_MODEL?.trim() ?? ""
-  if (modelId === "") throw new Error("缺少 ANTHROPIC_MODEL：请在 .env 里填上网关支持的模型 id（参考 .env.example）。",)
+  if (modelId === "") throw new ConfigError("缺少 ANTHROPIC_MODEL：请在 .env 里填上网关支持的模型 id（参考 .env.example）。",)
   
   return {
     modelId,
@@ -92,6 +94,6 @@ export function createModelRegistry(config: GatewayConfig = gatewayConfigFromEnv
 export async function pickModel(models: MutableModels): Promise<Model<"anthropic-messages">> {
   const available = await models.getAvailable()
   const first = available[0]
-  if (first === undefined) throw new Error("没有可用模型：请设置 ANTHROPIC_API_KEY（凭证未解析到时 getAvailable() 返回空数组，不抛错）。",)
+  if (first === undefined) throw new ConfigError("没有可用模型：请设置 ANTHROPIC_API_KEY（凭证未解析到时 getAvailable() 返回空数组，不抛错）。",)
   return first as Model<"anthropic-messages">
 }

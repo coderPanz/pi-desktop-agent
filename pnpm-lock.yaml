@@ -132,18 +132,6 @@ importers:
       '@earendil-works/pi-durable':
         specifier: 1.4.0
         version: 1.4.0(@aws-sdk/credential-provider-node@3.972.88)(@smithy/signature-v4@5.7.4)(undici@7.30.1)(ws@8.22.0)
-      '@pi/ext-coding':
-        specifier: workspace:*
-        version: link:../extensions/coding
-      '@pi/ext-kb':
-        specifier: workspace:*
-        version: link:../extensions/kb
-      '@pi/ext-smartui':
-        specifier: workspace:*
-        version: link:../extensions/smartui
-      '@pi/ext-toolsmith':
-        specifier: workspace:*
-        version: link:../extensions/toolsmith
       '@pi/shared-docs':
         specifier: workspace:*
         version: link:../shared-docs
