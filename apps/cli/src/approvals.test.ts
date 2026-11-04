@@ -3,7 +3,12 @@ import { test } from "node:test"
 
 import { CliEventQueue, createTerminalApprover, parseApprovalAnswer } from "./approvals.ts"
 
-const REQUEST = { tool: "bash", summary: "bash: rm -rf ./build" }
+const REQUEST = {
+  tool: "bash",
+  summary: "bash: rm -rf ./build",
+  conversationId: 1,
+  callId: "call-1",
+}
 
 test("队先进先出地交出输入行", async () => {
   const queue = new CliEventQueue()
@@ -82,7 +87,7 @@ test("关闭后 take 返回 undefined", async () => {
 test("非交互输入不产生审批事件，直接拒绝", async () => {
   const queue = new CliEventQueue()
   const approver = createTerminalApprover({ queue, interactive: false })
-  assert.equal(await approver(REQUEST), false)
+  assert.equal(await approver(REQUEST, { signal: undefined }), false)
   // 队列里什么都不该留下。
   queue.close()
   assert.equal(await queue.take(), undefined)
@@ -91,7 +96,7 @@ test("非交互输入不产生审批事件，直接拒绝", async () => {
 test("交互输入把审批交给人", async () => {
   const queue = new CliEventQueue()
   const approver = createTerminalApprover({ queue, interactive: true })
-  const answer = approver(REQUEST)
+  const answer = approver(REQUEST, { signal: undefined })
   const event = await queue.take()
   if (event?.kind !== "approval") throw new Error("应为审批事件")
   event.settle(true)

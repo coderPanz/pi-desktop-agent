@@ -17,7 +17,7 @@ export type EntryId = number
 export type TaskId = number
 
 /**
- * 内置条目 kind。这些字符串一旦落盘就是契约，改它等于让旧会话读不出来。
+ * 内置条目 kind。这些字符串一旦写入库就是契约，改它等于让旧会话读不出来。
  */
 export const EntryKind = {
   user: "pi.user",
@@ -29,7 +29,7 @@ export const EntryKind = {
 } as const
 
 /**
- * 内置文档 kind。同上：落盘即契约。
+ * 内置文档 kind。同上：写入库即契约。
  */
 export const DocKind = {
   /** 运行控制与当前生成/工具轮的展示状态。 */

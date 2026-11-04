@@ -1,7 +1,7 @@
 /**
- * `app.approvals`：待审批的副作用。
+ * `app.approvals`：待审批的副作用
  *
- * 审批是「三档策略」的落地点（技术方案 §D6）：只读放行、写文件需确认、危险命令必确认。
+ * 审批是「三档策略」的实现点（技术方案 §D6）：只读放行、写文件需确认、危险命令必确认。
  * 审批状态必须与工具任务分开存：任务是 durable 的，审批是人的决定。
  */
 import { defineDoc } from "@earendil-works/pi-durable"

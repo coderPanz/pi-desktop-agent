@@ -11,11 +11,11 @@
 
 ## 2. 名字是契约
 
-Extension / Tool / Document kind / Entry kind / Task name / provider id 一旦落盘就不再改名。
+Extension / Tool / Document kind / Entry kind / Task name / provider id 一旦写入库就不再改名。
 
 - 内置条目的 kind 与文档 kind 定义在 `packages/shared-types/src/frame.ts`。
 - `app.*` 文档与条目定义在 `packages/shared-docs/src/`。
-- `packages/shared-docs/src/contracts.test.ts` 用断言钉住这些值：改它必须是有意识的决定，并配迁移或接受旧数据读不出来。
+- `packages/shared-docs/src/contracts.test.ts` 用断言锁定这些值：改它必须是有意识的决定，并配迁移或接受旧数据读不出来。
 
 ## 3. 先提交后展示
 
@@ -33,7 +33,7 @@ Harness 只活在主进程或 CLI 进程里。一个库文件只允许一个 Har
 
 ## 6. 契约写在代码里
 
-线协议（帧 / IPC / 推送 / 错误码）只在 `packages/shared-types`，`app.*` 只在 `packages/shared-docs`。
+IPC 上传输的数据形状（帧 / 命令 / 推送 / 错误码）只在 `packages/shared-types`，`app.*` 只在 `packages/shared-docs`。
 文档只解释**为什么**这样定，不重复类型定义——两边各写一份必然漂移。
 
 ## 7. 不写用不到的抽象

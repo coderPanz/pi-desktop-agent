@@ -43,7 +43,7 @@ export const HELP_TEXT = `pi-agent-desktop CLI —— 不启动 Electron 的终�
 选项
   -p, --prompt <text>            一次性提交并等待回答，然后退出
       --data-dir <path>          数据根目录（默认 ${DEFAULT_DATA_DIR}），其中存放 session.sqlite / workspace / tools / logs
-      --memory                   使用内存库，不落盘；用于验收与排障
+      --memory                   使用内存库，不写文件；用于验收与排障
       --conv <id>                指定起始会话 id（默认 root 会话）
       --partial-interval-ms <n>  流式提交间隔毫秒（默认 ${DEFAULT_PARTIAL_INTERVAL_MS}）
   -h, --help                     打印本帮助
@@ -104,7 +104,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     }
   }
 
-  if (memory && dataDirGiven) throw new UsageError("--memory 与 --data-dir 互斥：前者不落盘，后者要落盘")
+  if (memory && dataDirGiven) throw new UsageError("--memory 与 --data-dir 互斥：前者不写文件，后者要写文件")
 
   const mode: CliMode = help ? "help" : prompt === undefined ? "repl" : "once"
   return { mode, memory, dataDir, conversationId, partialIntervalMs, prompt }

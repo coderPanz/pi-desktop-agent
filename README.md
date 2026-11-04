@@ -3,7 +3,7 @@
 本机 Agent 工作台：对话、工具执行、界面状态全部落在本机一个可恢复的存储里。
 模型在你自己的文件与命令上干活，而你能随时打断、重启、追溯。
 
-- **不是聊天外壳**：每次回答、每次工具调用都是已落盘状态；进程被杀之后能接着跑。
+- **不是聊天外壳**：每次回答、每次工具调用都是已写入库状态；进程被杀之后能接着跑。
 - **不是云端 Agent**：只做本机文件、本机 shell、本地知识库三件事；副作用由你审批。
 - **不是封闭产品**：预留三个定制面——扩展（工具/Task/Hook）、文档（`app.*` 业务状态）、UI。
 
@@ -15,13 +15,15 @@
 |---|---|
 | 终端交互（发消息 / 中断 / 排队 / 分叉 / 重置 / 压缩 / 诊断） | ✅ `pnpm cli` |
 | 持久化与重启恢复（SQLite + WAL，重开同一数据根接着用） | ✅ |
-| 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ 契约已落地，消费方是 CLI |
+| 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ 契约已实现，消费方是 CLI |
 | 契约（IPC / 推送 / 错误码 / `app.*` 文档） | ✅ 代码里，见 `packages/shared-types`、`packages/shared-docs` |
 | 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，终端内可审批 |
-| 桌面界面（Harness 接线 / IPC / 聊天 UI） | ⬜ 主进程只有窗口与安全配置 |
+| 桌面接线（Harness / IPC / 帧推送 / 审批） | ✅ 最小页可对话、可审批 |
+| 聊天界面（流式渲染、Markdown、分叉/压缩入口） | ⬜ 最小页只验证接线 |
 
-桌面应用目前**还不能对话**：主进程尚未持有 `HarnessHost`，`window.pi` 只有 `debug.ping`。
-需要完整能力时先用终端入口；两者的运行时是同一套 `@pi/core`。
+桌面应用现在能对话了：`pnpm dev` 或 `pnpm build && pnpm start`，主进程持有 `HarnessHost`，
+渲染进程通过 `window.pi.invoke` 走 IPC、靠推送拿帧。界面还是最小实现，完整界面见 ROADMAP。
+两者的运行时是同一套 `@pi/core`。
 
 ## 快速开始
 
@@ -30,8 +32,9 @@ pnpm install                                  # 首次会下载 Electron 二进�
 cp .env.example .env                          # 填 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL
 
 pnpm cli                                      # 终端交互，数据落在 ./.data
-pnpm cli --memory                             # 内存库，不落盘（验收与排障用）
+pnpm cli --memory                             # 内存库，不写文件（验收与排障用）
 pnpm cli --data-dir /tmp/pi-demo              # 指定数据根
+PI_DATA_DIR=/tmp/pi-demo pnpm dev             # 桌面：指定数据根（排障/自测不碰真实 userData）
 pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退出
 ```
 
@@ -92,7 +95,7 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 └─ logs/             结构化日志
 ```
 
-约定：**存储失败不降级**到内存库——失败必须显式可见，否则「数据没落盘」会被误当成「功能正常」。
+约定：**存储失败不降级**到内存库——失败必须显式可见，否则「数据没写入库」会被误当成「功能正常」。
 一个库文件只允许一个 Harness（单写者），这里不做跨进程锁。
 
 ## 架构
@@ -123,8 +126,8 @@ cli      ──▶ core / shared-types
 | 错误码与封套 | `packages/shared-types/src/errors.ts` |
 | `app.*` 文档与条目定义 | `packages/shared-docs/src/*` |
 
-**kind 一旦落盘就是契约**：`pi.user` / `pi.assistant` / `app.settings` 这类字符串改名等于让旧数据读不出来。
-`packages/shared-docs/src/contracts.test.ts` 用断言把这些值钉住，改它必须是有意识的决定。
+**kind 一旦写入库就是契约**：`pi.user` / `pi.assistant` / `app.settings` 这类字符串改名等于让旧数据读不出来。
+`packages/shared-docs/src/contracts.test.ts` 用断言锁定这些值，改它必须是有意识的决定。
 
 ### 三层运行时
 
@@ -171,14 +174,16 @@ core 的分层与边界见 [`packages/core/README.md`](./packages/core/README.md
 cd apps/desktop/node_modules/electron && node install.js
 ```
 
-**`--memory` 与 `--data-dir` 同时传**：互斥，参数解析会直接报错——前者不落盘、后者要落盘。
+**`--memory` 与 `--data-dir` 同时传**：互斥，参数解析会直接报错——前者不写文件、后者要写文件。
 
 **桌面窗口白屏**：主进程 `did-finish-load` / `did-fail-load` 会打日志；`PI_DEV_SERVER_URL` 未注入时
 加载的是 `dist/renderer/index.html`，需要先 `pnpm build`。
 
 ## 已知限制
 
-- 桌面应用还不能对话：无 `HarnessHost`、无 IPC 契约实现、渲染进程是骨架页。
+- 桌面界面是最小页：没有 Markdown 渲染、没有分叉/压缩入口、生成失败的错误不展示（只在会话记录里）。
+- 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
+  实测 `InMemoryCredentialStore is not a constructor`）；打包时靠 electron-builder 带上 node_modules。
 - Electron 侧审批通道尚未接入：工具只在终端里能让人批准；桌面上要等 §2.1 的 `app.approvals` + 事件门。
 - `bash` 本身可以 `cd` 到工作区外（边界检查只管 cwd 的起点），靠审批阑住；V1 不宣称沙箱。
 - `pnpm package` 从未跑过；Electron 打包后 `node:sqlite` 的 ABI 与 asar 内动态 import 都未验证。

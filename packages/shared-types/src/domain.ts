@@ -38,6 +38,27 @@ export type ToolInfo = {
   readonly isError?: boolean
 }
 
+/** 审批结果的三种终态：同意、拒绝、超时未决（视为拒绝）。 */
+export type ApprovalDecision = "approved" | "denied" | "expired"
+
+/**
+ * 一条待审批请求在 IPC 上传输的形状。
+ *
+ * 与 `@pi/shared-docs` 的 `app.approvals` 保持同形，但那个包带 `pi-durable`，
+ * 渲染进程不能 import；所以线上单独声明一份（改名即契约）。
+ */
+export type ApprovalView = {
+  /** 审批请求 id；同一次工具调用可能先后产生多条。 */
+  readonly id: string
+  readonly conversationId: ConversationId
+  /** 工具调用 id（`ToolCall.id`），与 `pi.live.tools[].callId` 对得上。 */
+  readonly callId: string
+  readonly tool: string
+  /** 给人看的一句话，例如 `bash: rm -rf build`。 */
+  readonly summary: string
+  readonly createdAt: number
+}
+
 /** 整体运行状况，给启动自检和状态栏用；不含任何消息内容。 */
 export type HostStatus = {
   /** 调度器在不在推进。 */

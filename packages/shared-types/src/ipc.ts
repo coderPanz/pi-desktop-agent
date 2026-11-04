@@ -1,7 +1,7 @@
 /**
  * IPC ：渲染进程通过该层调用主进程的方法
  */
-import type { ConversationSummary, HostInfo, HostStatus } from "./domain.ts"
+import type { ApprovalDecision, ApprovalView, ConversationSummary, HostInfo, HostStatus } from "./domain.ts"
 import type { IpcErrorPayload } from "./errors.ts"
 import type { ConversationId, EntryId, OpenedView } from "./frame.ts"
 import type { JsonObject } from "./json.ts"
@@ -67,6 +67,19 @@ export type IpcMap = {
   "doc.get": {
     readonly request: { readonly conversationId: ConversationId; readonly kind: string }
     readonly response: JsonObject | undefined
+  }
+  /** 该会话当前待审批的请求，按产生顺序。 */
+  "approval.list": {
+    readonly request: { readonly conversationId: ConversationId }
+    readonly response: readonly ApprovalView[]
+  }
+  /**
+   * 回答一条待审批请求。`id` 是幂等键：重复回答同一个 id 只会生效一次，
+   * 已结束（超时/已答）的请求返回它的终态，不报错。
+   */
+  "approval.respond": {
+    readonly request: { readonly id: string; readonly approved: boolean }
+    readonly response: { readonly decision: ApprovalDecision }
   }
 }
 

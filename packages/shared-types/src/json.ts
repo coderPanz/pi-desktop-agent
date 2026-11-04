@@ -10,7 +10,7 @@ export function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-/** 递归判断：落盘值可能来自更早的版本，取用前必须能证明它是严格 JSON。 */
+/** 递归判断：从文件里读出的值可能来自更早的版本，取用前必须能证明它是严格 JSON。 */
 export function isJsonValue(value: unknown): value is JsonValue {
   if (value === null) return true
   switch (typeof value) {

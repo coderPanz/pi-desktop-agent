@@ -13,31 +13,26 @@
 | 契约（IPC / 推送 / 错误码 / `app.*`） | ✅ 定义 | `shared-types`、`shared-docs`；渲染进程侧尚无实现 |
 | 存储门禁（`node:sqlite` + WAL） | ✅ 实测 | `pnpm gate`：Electron 45.0.0 / Node 24.22.0 |
 | 工具链（读/列/写/改/bash + 三档审批） | ✅ | `packages/extensions/coding`：5 个工具 + `beforeTool` 审批；`pnpm test` 覆盖策略与边界，CLI 端到端实测读文件/列目录/拦截写文件/交互式批准 |
-| 桌面接线（`HarnessHost` + IPC） | ⬜ | 主进程只有窗口与安全配置，`window.pi` 仅 `debug.ping` |
-| 聊天界面 | ⬜ | 渲染进程是骨架页 |
+| 桌面接线（`HarnessHost` + IPC + 推送） | ✅ | 主进程持有 `HarnessHost`（`src/main/runtime.ts`）；`IpcRouter` 覆盖 13 个通道；帧/审批推送；`before-quit` 按「停推送 → 结算审批 → 停帧 → 关 Harness」的顺序收尾。实测：`conv.open` 首帧 `seq=0`，提交后帧 `seq` 连续到 5，`重连 0 / 丢弃 0`；重启同一数据根副本带出 5 条历史 |
+| 聊天界面 | ⬜ | 渲染进程只有占位页 |
 | 崩溃恢复实测 | ⬜ | `PI_CRASH_POINT` 五类场景未跑 |
 | 打包 | ⬜ | `pnpm package` 从未执行 |
 
 ## 2. 待办（按依赖顺序）
 
-### 2.1 桌面接线
+### 2.1 聊天界面
 
-主进程持有 `HarnessHost`，实现 `IpcMap` / `PushMap`，`before-quit` 按「停推送 → 关会话订阅 → 关 Harness」收口。
-这一步只依赖已完成的部分，可先于界面完成，用一个最小页面验证 `conv.open` 的 `seq` 连续性。
+渲染进程持有只读副本：流式与最终结果不同显、工具卡 `running→done` 不重复、排队可见、停止不伪造消息、丢帧 resync。
 
-审批在 Electron 侧的通道也在这里接：工具只认一个注入的 `Approver`，桌面实现换成写 `app.approvals` 一条 pending + 等 UI 答复即可（`apps/cli/src/approvals.ts` 的单消费者队列可直接对照）。
+当前页（`apps/desktop/src/renderer/src/App.tsx`）是接线验收用的最小实现：条目/工具/审批能看能点，
+但没有 Markdown 渲染、没有分叉/压缩入口、没有错误呈现（`pi.provider` 的失败目前只在会话记录里）。
 
-### 2.2 聊天界面
-
-渲染进程持有只读副本：`useSyncExternalStore` + 稳定引用、流式与落盘不同显、工具卡 `running→done` 不重复、
-排队可见、停止不伪造消息、丢帧触发 resync。
-
-### 2.3 崩溃恢复实测与打包
+### 2.2 崩溃恢复实测与打包
 
 `PI_CRASH_POINT` 五类场景各留「重启后第一次看到了什么」的证据；随后 `pnpm package` 做打包冒烟，
 确认 `node:sqlite` 在 asar 与打包后的路径/ABI 正常。
 
-### 2.4 后续能力（可与界面并行）
+### 2.3 后续能力（可与界面并行）
 
 | 能力 | 依赖 | 说明 |
 |---|---|---|

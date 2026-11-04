@@ -3,7 +3,12 @@ import { test } from "node:test"
 
 import { requestApproval } from "./approval.ts"
 
-const REQUEST = { tool: "bash", summary: "bash: rm -rf ./build" }
+const REQUEST = {
+  tool: "bash",
+  summary: "bash: rm -rf ./build",
+  conversationId: 1,
+  callId: "call-1",
+}
 
 test("没有答复通道按拒绝处理", async () => {
   assert.equal(await requestApproval(REQUEST, undefined), false)

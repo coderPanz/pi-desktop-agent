@@ -15,7 +15,7 @@ import type {
   ToolExecutionMode,
   ToolRegistration,
 } from "@earendil-works/pi-durable"
-export type { ApprovalRequest, Approver } from "./approval.ts"
+export type { ApprovalContext, ApprovalRequest, Approver } from "./approval.ts"
 
 import os from "node:os"
 
@@ -134,21 +134,26 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
   ]
 
   /**
-   * 审批闸门
+   * 执行前的检查
    * - ToolTask：SDK 内置的「一次工具调用」任务（名字 pi.tool），把「解析工具 → 校验参数 → 跑 beforeTool 钩子 → 记执行意图 → 执行 → 跑 afterTool → 落结果」这一  
  串跑成一个崩溃后可恢复的 durable 任务
    *  - block：beforeTool 钩子返回的一个字符串，表示这次调用不许执行——它会被写成模型看到的失败结果 Tool call blocked: <block>，工具一次都不会跑。
    */
   const approvals = hook(ToolTask, {
     // 在工具执行前，检查是否允许执行
-    async beforeTool(call, _api, context) {
+    async beforeTool(call, api, context) {
       const view: ToolCallView = { name: call.name, arguments: call.arguments }
       const verdict = classify(view, policy)
       if (verdict === "allow") return undefined
       const summary = describeCall(view)
       if (verdict === "deny") return { block: `禁止执行：${summary}` }
       const approved = await requestApproval(
-        { tool: call.name, summary },
+        {
+          tool: call.name,
+          summary,
+          conversationId: api.conversationId,
+          callId: call.id,
+        },
         options.approve,
         {
           timeoutMs,

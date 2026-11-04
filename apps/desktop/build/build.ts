@@ -55,15 +55,34 @@ const shared = {
   target: "node22",
   /** 生成 .map，让运行时栈追踪能映射回 .ts 源码行号 */
   sourcemap: true,
-  /** 唯一不打包的模块：electron 由 Electron 运行时注入，单独打包会去找 CJS 原生绑定而失败 */
+  /**
+   * 唯一不打包的模块：`electron` 由 Electron 运行时注入，
+   * 单独打包会去找 CJS 原生绑定而失败。
+   */
   external: ["electron"],
   /** 只输出 warning/error，摘要 */
   logLevel: "warning" as const,
 }
 
+/**
+ * 主进程额外把 `@earendil-works/*` 留在外部。
+ *
+ * 它们是 ESM 且内部有循环引用，esbuild 内联后类绑定会变成 undefined
+ * （实测 `InMemoryCredentialStore is not a constructor`）。它们的 `exports` 指向 dist 里的 JS，
+ * Electron 的 Node 能直接加载。preload 不能这么做——沙箱里没有 node_modules。
+ */
+const harnessExternal = [
+  "@earendil-works/*",
+  "@earendil-works/pi-ai",
+  "@earendil-works/pi-durable",
+  "@earendil-works/chord",
+  "@earendil-works/pi-telemetry",
+]
+
 /** 主进程：两个入口（正常启动 / 存储门禁）。 */
 const mainOptions = {
   ...shared,
+  external: ["electron", ...harnessExternal],
   /** 打包入口，每个 key 对应的文件单独执行打包和输出 */
   entryPoints: {
     index: path.join(appRoot, "src/main/index.ts"),
@@ -150,7 +169,7 @@ async function runDev(): Promise<void> {
   // 编程式启动 Vite dev server（复用同一份 vite.config.ts，renderer 改动走 HMR）
   const server = await createServer({ configFile: path.join(appRoot, "vite.config.ts") })
   await server.listen()
-  // resolvedUrls 极端情况下可能为空，兜底用 vite.config.ts 里写死的 5173（strictPort）
+  // resolvedUrls 极端情况下可能为空，退回用 vite.config.ts 里写死的 5173（strictPort）
   const url = server.resolvedUrls?.local[0] ?? "http://localhost:5173/"
   console.log(`[dev] renderer: ${url}`)
 

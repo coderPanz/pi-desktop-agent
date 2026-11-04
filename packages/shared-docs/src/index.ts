@@ -1,10 +1,10 @@
 /**
- * @pi/shared-docs — `app.*` 文档与条目定义，只在主进程 import。
+ * @pi/shared-docs — `app.*` 文档与条目定义，只在主进程 import
  *
- * 为什么单独成包：kind 一旦落盘就是契约，必须集中放在一处、有版本号、有迁移入口，
+ * 为什么单独成包：kind 一旦写入库就是契约，必须集中放在一处、有版本号、有迁移入口，
  * 而不是散在 `handlers/` 里随用随写。渲染进程不引用本包（它依赖 `pi-durable`）。
  *
- * 已落地（S5）：
+ * 已实现（S5）：
  *   settings.ts   app.settings    会话无关的应用偏好
  *   approvals.ts  app.approvals   待审批副作用与最近决定
  *   entries.ts    app.ui_action / app.approval  应用条目 kind

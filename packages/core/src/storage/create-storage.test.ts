@@ -68,7 +68,7 @@ test("文件库的父目录会自动建出来", async () => {
   }
 })
 
-test("内存库不落盘", async () => {
+test("内存库不写文件", async () => {
   const storage = await createStorage({ kind: "memory" })
   await storage.close(ctx)
 })

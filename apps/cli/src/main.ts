@@ -143,7 +143,7 @@ async function main(argv: readonly string[]): Promise<number> {
       ? await runOnce(manager, args.prompt ?? "")
       : await runRepl({ manager, host, openConversation, events, interactive })
   } finally {
-    // 收口顺序固定：先停帧，再关会话订阅，最后关 Harness（它会连存储一起收）。
+    // 收尾顺序固定：先停帧，再关会话订阅，最后关 Harness（它会连存储一起收）。
     await hub.closeAll()
     await manager.closeWatches()
     await host.close()

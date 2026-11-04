@@ -21,13 +21,13 @@
 
 | 模块 | 职责 | 关键点 |
 |---|---|---|
-| `agent/models.ts` | gateway provider + `createModelRegistry` / `pickModel` | `PROVIDER_ID = "gateway"` 是落盘契约；凭证走 `envApiKeyAuth`，**每次请求**解析，换 key 不必重建 |
+| `agent/models.ts` | gateway provider + `createModelRegistry` / `pickModel` | `PROVIDER_ID = "gateway"` 是写入库契约；凭证走 `envApiKeyAuth`，**每次请求**解析，换 key 不必重建 |
 | `agent/env.ts` | `NodeExecutionEnv` 工厂 | 每次使用新建、不缓存（原因见 [17 号笔记](../../docs/notes/durable/17.%20为什么每次调用都新建%20NodeExecutionEnv.md)） |
 | `session/manager.ts` | 会话操作：`list/select/create/submit/abort/fork/reset/compact/inbox/isBusy/contextView/entries/view` | 只返回数据、不打印；**不缓存 Conversation 句柄**，也不保存聊天记录 |
 | `paths.ts` | `workspacePaths` / `ensureWorkspacePaths` | 根由调用方注入；只算路径 + 建目录，不建库 |
 | `errors.ts` | `UserError` / `ConfigError` | 与 SDK 的 `SessionFailed` 分工：前者可继续，后者必须重建 Harness |
 | `storage/create-storage.ts` | 文件库（`node:sqlite`，WAL）/ 内存库 | **失败不降级**到内存库；一个库文件只允许一个 Harness |
-| `harness/open-harness.ts` | `storage → Harness.open → resume → root` | 顺序是验收口径；把顺序写死，调用方只提供零件 |
+| `harness/open-harness.ts` | `storage → Harness.open → resume → root` | 顺序就是验收标准；把顺序写死，调用方只提供零件 |
 | `harness/host.ts` | `HarnessHost` | 唯一有内部依赖的文件；`#closing ??=` 保证 `close()` 幂等 |
 | `harness/materialize.ts` | `materializeView` | SDK 视图 → `@pi/shared-types` 的副本结构；坏条目/坏文档丢弃而不抛错 |
 | `harness/registry.ts` | `createPiRegistry` / `summarizeRegistry` | 内置扩展由调用方注入（core 不知道有哪些工具）；注册表可热改 |
@@ -87,7 +87,7 @@ await host.close()                               // 幂等
 `context` 是 pi-durable 每个 API 都要带的「信封」，业务代码没有特殊需求时统一传
 `BACKGROUND_CONTEXT`（`@earendil-works/chord/context`），`SessionManager` 内部已默认这么做。
 
-### 测试模式（不联网、不落盘）
+### 测试模式（不联网、不写文件）
 
 ```ts
 import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai"
@@ -106,7 +106,7 @@ const manager = await SessionManager.open({ harness: host.harness, storage })
 
 1. **不缓存、不做单例**：`NodeExecutionEnv` 每次使用新建；`models` 每次进程启动建一次后向下传参；
    `SessionManager` 不缓存 `Conversation` 句柄——状态始终以 Harness / Storage 为准。
-2. **失败不降级**：存储打不开就抛，不偷偷换内存库；否则「数据没落盘」会被当成「功能正常」。
+2. **失败不降级**：存储打不开就抛，不偷偷换内存库；否则「数据没写入库」会被当成「功能正常」。
 3. **没有第二个实现就不建接口**：core 里没有任何 `interface` / 抽象基类，`SessionManager` / `HarnessHost` /
    `FrameHub` 都是具体类。
 4. **顺序即契约**：`storage → open → resume → root`、`open()` 不重放历史、`fork` 不猜 entryId（没条目就报错）。
@@ -126,7 +126,7 @@ pnpm lint        # 硬边界（禁 electron / 渲染进程禁 node:*）在这里
 |---|---|
 | `session/manager.test.ts` | 起始会话是 root、新建/切换/列表、fork 继承 parent、**fork 无条目显式失败**、reset 写 `pi.reset`、isBusy/inbox、**view 按会话缓存同一对象**、queue modes、`close()` 幂等 |
 | `frames/frame-hub.test.ts` | open 不重放历史、seq 单调 +1、重复 open 续 seq、移除 sink、坏 sink 不打断别人、会话不存在报错 |
-| `storage/create-storage.test.ts` | **文件库跨进程重开能读回已提交条目**、父目录自动创建、内存库不落盘 |
+| `storage/create-storage.test.ts` | **文件库跨进程重开能读回已提交条目**、父目录自动创建、内存库不写文件 |
 | `paths.test.ts` | 默认布局、相对根解析成绝对路径、工作区可指向根外、`ensureWorkspacePaths` 可重复调用 |
 | `diagnostics/inspect.test.ts` | 空闲时 0 任务且摘要不含条目内容、注册表摘要只列名字 |
 
@@ -149,7 +149,7 @@ apps/desktop (主进程)  apps/cli              渲染进程（禁 import @pi/co
 core 内部只有**一条**内部依赖边：`harness/host.ts → harness/open-harness.ts`；
 其余 10 个模块只依赖 SDK 与 `node:*`。
 
-## 还没落地（S5，等 `@pi/shared-docs` 的 `app.*` 文档定义）
+## 还没实现（S5，等 `@pi/shared-docs` 的 `app.*` 文档定义）
 
 - `harness/materialize.ts`——把 `app.*` 文档物化进会话创建
 - `agent/credentials.ts`——凭证存储（现在只有 `envApiKeyAuth` 环境变量）

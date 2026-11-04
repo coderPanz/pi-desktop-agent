@@ -2,7 +2,7 @@
  * `app.settings`：应用级偏好。
  *
  * Session 作用域的单例——一个数据根只有一份，跟会话无关。
- * kind 一旦落盘就是契约，改名等于让旧数据读不出来。
+ * kind 一旦写入库就是契约，改名等于让旧数据读不出来。
  */
 import { defineDoc } from "@earendil-works/pi-durable"
 

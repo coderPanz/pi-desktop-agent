@@ -6,6 +6,16 @@
 
 ### 新增
 
+- 桌面接线：主进程持有 `HarnessHost`（`apps/desktop/src/main/runtime.ts`），`IpcRouter` 覆盖 13 个通道，
+  帧与审批走推送，`before-quit` 按「停推送 → 结算审批 → 停帧 → 关 Harness」的顺序收尾（顺序固定在 `DesktopRuntime.close()`）
+- `@pi/core` 新增两块纯 Node 逻辑：`ApprovalBroker`（等答复的 Promise + `app.approvals` 审计镜像 + 超时/取消 + 清理重启残留）
+  与 `IpcRouter`（逐通道校验、错误压成 `IpcResult`）；两者只依赖 Harness/Storage，可在普通 Node 里测
+- 契约扩展：IPC 加 `approval.list` / `approval.respond`，推送加 `approval`，新增 `PiBridge`（preload 只暴露
+  `invoke` / `subscribe`，不暴露 `ipcRenderer`）
+- 桌面最小页：会话列表、条目、工具状态、审批「允许/拒绝」、提交与中断，外加一行验收用的
+  `seq / 重连 / 丢弃` 调试条
+- `PI_DATA_DIR` 覆盖数据根：桌面排障与自测不碰真实 `userData`
+
 - `@pi/ext-coding`（扩展名 `coding`）：`read` / `list_dir` / `write` / `edit` / `bash` 五个工具。
   `read`/`write`/`edit`/`bash` 直接复用 `@earendil-works/pi-durable/tools`（截断续读、图片降级、输出 spill、同路径写入串行都是 SDK 已经做对的事），
   扩展只补 `list_dir`、路径边界与审批
@@ -34,6 +44,14 @@
 
 ### 修复
 
+- 打包配置：主进程内联 `@earendil-works/*` 会破坏它们的 ESM 循环引用，运行时表现为
+  `InMemoryCredentialStore is not a constructor`（生成任务 faulted、提交 `unanswered`）；
+  main 改为把这些包留在外部，preload 仍全内联（沙箱里没有 node_modules）
+- 启动顺序：先建窗口再注册 IPC，渲染进程会抢跑并报 `No handler registered for 'pi:invoke'`；
+  改成先装配运行时与 handler、再开窗
+- `@pi/ext-coding` 的审批请求补 `conversationId` / `callId`：宿主靠它写对会话文档、推对窗口，
+  并在取消时精确清理
+
 - 审批等待接入 `context.abortSignal`：会话中断或关闭时立刻按拒绝返回，不再等到 120s 超时。
   之前不认信号：`Scheduler.join()` 关闭时只 `abort()` 再 `await invocation.done`，abort 只是信号，
   卡在钩子里的等待会让 `host.close()` 一直等到超时
@@ -52,7 +70,7 @@
 
 - 终端入口 `apps/cli`：真实装配 `storage → open → resume → root`，支持发消息、中断、排队、分叉、重置、压缩、诊断
 - 参数与命令解析（`--memory` / `--data-dir` / `--conv` / `--partial-interval-ms` / `-p`）与斜杠命令
-- 帧 → 终端渲染：流式只追加后缀，正在生成的回答与落盘回答不双显
+- 帧 → 终端渲染：流式只追加后缀，正在生成的回答与已确定的回答不双显
 - 契约包 `@pi/shared-types`：帧协议、命令通道、推送通道、错误码、业务视图模型，以及内置 kind 常量
 - 文档包 `@pi/shared-docs`：`app.settings` / `app.approvals` / `app.workspace` 与 `app.ui_action` / `app.approval` 条目
 - `core/harness/materialize.ts`：把 SDK 的会话视图投影成线协议副本，坏数据丢弃而不抛错
@@ -69,6 +87,14 @@
 - README 改为使用说明（快速开始 / 命令 / 数据布局 / 契约位置 / 故障排查），路线留在 `docs/知识中心/ROADMAP.md`
 
 ### 修复
+
+- 打包配置：主进程内联 `@earendil-works/*` 会破坏它们的 ESM 循环引用，运行时表现为
+  `InMemoryCredentialStore is not a constructor`（生成任务 faulted、提交 `unanswered`）；
+  main 改为把这些包留在外部，preload 仍全内联（沙箱里没有 node_modules）
+- 启动顺序：先建窗口再注册 IPC，渲染进程会抢跑并报 `No handler registered for 'pi:invoke'`；
+  改成先装配运行时与 handler、再开窗
+- `@pi/ext-coding` 的审批请求补 `conversationId` / `callId`：宿主靠它写对会话文档、推对窗口，
+  并在取消时精确清理
 
 - 管道输入与 `Ctrl+D` 时 REPL 挂在未决的 `rl.question()` 上，导致进程无法退出
 - 斜杠命令拼错被当成「启动失败」而非用户输入问题

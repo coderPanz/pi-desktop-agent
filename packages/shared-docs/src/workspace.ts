@@ -22,7 +22,7 @@ export type AppWorkspace = {
   lastError?: { message: string; at: number }
 }
 
-/** kind 落盘即契约；攒够 32 条增量再落一次整帧，省写入。 */
+/** kind 写入库即契约；攒够 32 条增量再落一次整帧，省写入。 */
 export const AppWorkspaceDoc = defineDoc({
   kind: "app.workspace",
   version: 1,

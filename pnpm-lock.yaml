@@ -74,6 +74,9 @@ importers:
       '@pi/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pi/ext-coding':
+        specifier: workspace:*
+        version: link:../../packages/extensions/coding
       '@pi/shared-docs':
         specifier: workspace:*
         version: link:../../packages/shared-docs

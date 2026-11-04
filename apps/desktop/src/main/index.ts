@@ -1,120 +1,149 @@
 /**
- * Electron 主进程入口（骨架）。
+ * Electron 主进程入口。
  *
- * 现在只做三件事：单实例锁、创建窗口、处理 macOS 生命周期。
- * 阶段 5 会在这里加上：存储门禁 → HarnessHost → IpcRouter → WatchHub，
- * 以及 before-quit 里「先停推送、再 await host.close()」的退出顺序。
+ * 三件事：创建窗口、配置 `DesktopRuntime`（存储 → Harness → IPC/推送）、固定顺序
  */
 import path from "node:path"
-// `file://` 协议的 URL 对象 / 字符串，转换为操作系统原生的绝对文件路径: file://xxx/xxx/xxx.js -> /xxx/xxx/xxx.js
 import { fileURLToPath } from "node:url"
-// Electron 主进程基础的导入语句, app: Electron 为应用实例，BrowserWindow：创建桌面窗口（本质上是套了 Chromium 渲染页面）
-import { app, BrowserWindow } from "electron"
 
 /**
- * import.meta.url ESModule：内置元属性，返回当前模块文件的 `file://` 绝对 URL 字符串
- * path.dirname：获取当前文件所在的目录路径，/a/b/c.js -> /a/b
- * mainDir：主进程目录路径
+ * Electron 主进程里的三样东西：
+ * - `app`：应用生命周期（单实例锁、whenReady、before-quit）与 `userData` 路径；
+ * - `BrowserWindow`：窗口（渲染进程的宿主），也是推送的出口 `webContents.send`；
+ * - `IpcMainInvokeEvent`：只要类型，用来判断「这条 IPC 是不是自己窗口发来的」。
  */
+import { app, BrowserWindow, type IpcMainInvokeEvent } from "electron"
+
+/** 只借类型不借代码：`PushChannel` 是通道名、`PushMap` 是各通道的载荷，`publish` 靠这一对把「通道名 → 载荷」绑死，编译后本行消失。 */
+import type { PushChannel, PushMap } from "@pi/shared-types"
+
+/** 把命令通道绑到 `ipcMain`：发送方校验 + 通道白名单，业务全在 runtime 的 router 里 */
+import { registerIpc } from "./ipc.ts"
+/** 纯 Node 的运行时装配（存储 → Harness → 会话/帧/审批/路由）；不 import electron，因此可单测。 */
+import { DesktopRuntime } from "./runtime.ts"
+
+/** `file://` 协议 URL → 原生绝对路径。 */
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
-// 开发服务器 URL
+/** 开发期由 build 脚本注入的 Vite 地址；生产构建没有它，走本地文件。 */
 const devServerUrl = process.env.PI_DEV_SERVER_URL
 
-// Electron 主进程 api，用来实现单实例应用并锁定，避免多个实例同时运行应用多开，触发时机在应用创建前处理。
+// 请求单实例锁，确保只有一个实例运行
 const gotLock = app.requestSingleInstanceLock()
 
 if (!gotLock) {
   app.quit()
 } else {
-  // 声明主窗口变量
-  let mainWindow: BrowserWindow | undefined
+  let mainWindow: BrowserWindow | undefined // 主窗口
+  let runtime: DesktopRuntime | undefined // 运行时
+  let unregisterIpc: (() => void) | undefined // 注销 IPC 回调
+  //  停流程：「停推送 → 结算审批 → 停帧 → 关 Harness」
+  let stopping: Promise<void> | undefined
 
-  // 窗口聚焦
+  // 聚焦已有的窗口
   const focusExisting = (): void => {
-    // APP 刚启动，`mainWindow` 还没赋值 → `undefined` → return
-    // 用户已经关掉主窗口，`mainWindow` 变量还在，但窗口销毁 → `isDestroyed() = true` → return【isDestroyed：窗口底层原生资源是否已经销毁】
     if (mainWindow === undefined || mainWindow.isDestroyed()) return
-    // isMinimized：查询窗口是否处于最小化状态 ；如果是则进行 restore：恢复窗口到正常状态
     if (mainWindow.isMinimized()) mainWindow.restore()
-    // focus：将窗口聚焦到最前端，并确保其处于活动状态，确保不被其他窗口遮挡让用户可见
     mainWindow.focus()
   }
 
-  // 创建窗口
+  /** 
+   * 只做主进程 → 渲染进程单向推送
+   * type PushMap = {
+      view: ViewFrame
+      "host.status": HostStatus
+      approval: ApprovalPush
+    }
+   *  */
+  const publish = <K extends PushChannel>(
+    channel: K,
+    payload: PushMap[K],
+  ): void => {
+    if (mainWindow === undefined || mainWindow.isDestroyed()) return
+    /**
+     * webContents 相当于浏览器的 tab 页：负责加载 HTML、执行渲染进程的 JS
+     * 作用：("view", payload) 序列化（结构化克隆）后送到该页面的【渲染进程】
+     * 【渲染进程】里所有 ipcRenderer.on("view", handler) 监听收到后调用 handle
+     * 
+     * 推送链路
+     *  Harness 提交了一次变化
+          → FrameHub 发帧
+          → runtime: options.publish("view", frame)
+          → index.ts: mainWindow.webContents.send("view", frame)
+          → preload: ipcRenderer.on("view", …)
+          → 渲染进程: useConversation 里 applyFrame(...)
+     */
+    mainWindow.webContents.send(channel, payload) // 【通道名，载荷】
+  }
+
+  /** 接受可信任窗口发过来的 IPC。 */
+  const isTrustedSender = (event: IpcMainInvokeEvent): boolean =>
+    mainWindow !== undefined &&
+    !mainWindow.isDestroyed() &&
+    event.sender.id === mainWindow.webContents.id
+
+  /** 
+   * 创建窗口
+   * - new BrowserWindow(...) 创建的是**「一个原生窗口 + 一个页面（webContents）」；渲染进程本身是页面开始加载（loadFile /       
+     loadURL）时才由 Chromium 拉起来的
+    - webPreferences： 定该页面的权限
+    - loadFile(...) → 让这个页面开始加载，此时才有渲染进程；ready-to-show 后 show() 才画到屏幕上
+  */
   const createWindow = async (): Promise<BrowserWindow> => {
-    // new BrowserWindow：ectron 主进程 API，用来创建一个桌面窗口实例（Chromium 渲染窗口）
     const created = new BrowserWindow({
       width: 1100,
       height: 760,
       minWidth: 720,
       minHeight: 480,
-      show: false, // 窗口初始状态为隐藏，直到 ready-to-show（页面加载完成-渲染就绪） 事件触发后才显示
+      show: false, // 等 ready-to-show，避免白屏一闪
       title: "Pi Agent Desktop",
-      // 渲染进程沙箱安全组配置
       webPreferences: {
-        preload: path.join(mainDir, "../preload/index.cjs"), // 预加载脚本的路径：脚本在渲染页面加载之前运行，作为主进程和渲染进程 IPC 的桥梁
-        contextIsolation: true, // 是否隔离上下文，默认 true，隔离上下文可以防止渲染进程访问主进程的 API，提高安全性【contextBridge 依赖这个！】
-        nodeIntegration: false, // 是否禁用 Node.js 集成，默认 false，禁用 Node.js 集成可以防止渲染进程访问主进程的 Node.js  API，提高安全性
-        sandbox: true, // Chromium 沙箱模式，渲染进程跑在操作系统沙箱里，权限被严格锁住。
-        webSecurity: true, // 开启 Chromium 同源策略、CORS 安全校验。
+        preload: path.join(mainDir, "../preload/index.cjs"),
+        contextIsolation: true, // 渲染进程与 preload 分处两个上下文，只能经 contextBridge 通信
+        nodeIntegration: false, // 渲染进程拿不到 Node
+        sandbox: true, // 渲染进程跑在 Chromium 沙箱里
+        webSecurity: true, // 同源策略与 CORS 校验保持开启
       },
     })
 
-    /**
-     * once 只监听一次该事件，触发之后自动解绑
-     * ready-to-show：页面加载完成-渲染就绪【首帧渲染完成，DOM 已经可以画出来了，资源可能还没全部加载完。】
-     * show：显示窗口
-     */
     created.once("ready-to-show", () => created.show())
 
-    /**
-     * BrowserWindow.webContents: 窗口里 Chromium 渲染实例 页面加载、导航、console、IPC、页面事件都挂在它上面，是主进程和渲染页打交道的核心对象。
-     * did-finish-load：页面主文档 + 所有子资源（js、css、图片、iframe 等）全部加载完成后触发，比 ready-to-show 更晚触发。
-     * 调试打印：方便排查渲染进程加载失败的问题。
-     */
     created.webContents.on("did-finish-load", () => {
       console.log(
         "[main] 渲染进程已加载",
         devServerUrl ?? "file://…/dist/renderer/index.html",
       )
     })
-
-    /**
-     * did-fail-load：页面加载失败时触发
-     * 加载失败回调
-     */
     created.webContents.on(
       "did-fail-load",
       (_event, code, description, url) => {
         console.error("[main] 渲染进程加载失败", { code, description, url })
       },
     )
-
-    /**
-     * render-process-gone：渲染进程意外退出时触发
-     */
     created.webContents.on("render-process-gone", (_event, details) => {
       console.error("[main] 渲染进程退出", details)
     })
 
-    /**
-     * loadURL：加载一个远程 URL，也支持 `file://`
-     * loadFile：专门加载本地静态 HTML 文件，内部自动帮你转成 `file://` 协议 URL，**自动处理平台路径分隔符**
-     * 作用：开始加载渲染进程中的页面
-     */
     if (devServerUrl !== undefined) await created.loadURL(devServerUrl)
     else await created.loadFile(path.join(mainDir, "../renderer/index.html"))
 
     return created
   }
 
-  // 当Electron 实例已经存在并运行时，用户点击应用图标时，让已经开着的那个实例把窗口还原并置顶，而不是让第二个进程悄悄跑起来
+  /** 收尾：停推送 → 结算审批 → 停帧 → 关 Harness（连存储一起收）。顺序在 `DesktopRuntime.close()` 里。 */
+  const shutdown = (): Promise<void> => {
+    stopping ??= (async () => {
+      console.log("[main] 开始收尾：停推送 → 结算审批 → 停帧 → 关 Harness")
+      unregisterIpc?.()
+      unregisterIpc = undefined
+      await runtime?.close()
+      runtime = undefined
+      console.log("[main] 收尾完成")
+    })()
+    return stopping
+  }
+
   app.on("second-instance", focusExisting)
 
-  /**
-   * whenReady：Electron 主进程异步api，表示在 Electron 应用初始化完成、准备好创建窗口的时候 resolve。
-   * 作用：确保应用在所有平台都准备好后才执行后续操作
-   */
   app
     .whenReady()
     .then(async () => {
@@ -123,6 +152,29 @@ if (!gotLock) {
         node: process.versions.node,
         chrome: process.versions.chrome,
       })
+
+      // 先装配再开窗：窗口一出现渲染进程就会调 `app.info`，
+      // 那时 handler 必须已经就位（否则报 `No handler registered for 'pi:invoke'`）。
+      runtime = await DesktopRuntime.open({
+        // 排障与自测用：指向临时数据根，不碰真实 userData。
+        dataDir: process.env.PI_DATA_DIR ?? app.getPath("userData"),
+        publish,
+        appVersion: app.getVersion(),
+        platform: process.platform,
+        versions: {
+          electron: process.versions.electron,
+          node: process.versions.node,
+          chrome: process.versions.chrome,
+        },
+        log: (line, detail) => {
+          if (process.env.PI_LOG_LEVEL === "debug")
+            console.log("[core]", line, detail ?? "")
+        },
+      })
+
+      unregisterIpc = registerIpc({ runtime, isTrustedSender })
+      console.log("[main] 运行时就绪", { dataDir: runtime.info.dataDir })
+
       mainWindow = await createWindow()
     })
     .catch((error: unknown) => {
@@ -130,22 +182,31 @@ if (!gotLock) {
       app.exit(1)
     })
 
-  /**
-   * macOS：关窗不退出（后台任务应继续），从 Dock 回来时重建窗口。
-   * 作用：当用户从 Dock 栏点击应用图标时，让已经开着的那个实例把窗口还原并置顶，而不是让第二个进程悄悄跑起来
-   */
+  /** 窗口已存在时聚焦，否则创建新窗口 */
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length > 0) return
+    if (BrowserWindow.getAllWindows().length > 0) {
+      focusExisting()
+      return
+    }
     void createWindow().then(created => {
       mainWindow = created
     })
   })
 
   /**
-   * window-all-closed：所有窗口都被关闭时触发
-   * 作用：当用户关闭所有窗口时，退出应用
+   * 退出前先把 Harness 关干净：任务状态要写入库、存储要 close。
+   * `preventDefault()` 之后自己再 `quit()`，否则异步收尾还没完成进程就没了。
    */
+  app.on("before-quit", event => {
+    if (stopping !== undefined) return
+    event.preventDefault()
+    void shutdown()
+      .catch((error: unknown) => console.error("[main] 收尾失败", error))
+      .finally(() => app.quit())
+  })
+
   app.on("window-all-closed", () => {
+    // macOS 上关窗不退出：后台任务该继续跑（Harness 还在主进程里）。
     if (process.platform !== "darwin") app.quit()
   })
 }

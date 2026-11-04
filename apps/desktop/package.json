@@ -17,6 +17,7 @@
     "@earendil-works/pi-durable": "1.4.0",
     "@jboltai/tokui": "0.2.8",
     "@pi/core": "workspace:*",
+    "@pi/ext-coding": "workspace:*",
     "@pi/shared-docs": "workspace:*",
     "@pi/shared-types": "workspace:*",
     "react": "19.3.1",

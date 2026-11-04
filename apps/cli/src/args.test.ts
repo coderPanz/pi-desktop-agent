@@ -12,7 +12,7 @@ test("默认进入 REPL，数据根是 .data", () => {
   assert.equal(args.prompt, undefined)
 })
 
-test("--memory 不落盘", () => {
+test("--memory 不写文件", () => {
   assert.equal(parseArgs(["--memory"]).memory, true)
 })
 

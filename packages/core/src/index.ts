@@ -4,7 +4,7 @@
  * 消费者：`apps/cli`（无 Electron 的终端入口）与 `apps/desktop` 的主进程。两者共用同一套
  * SessionManager / HarnessHost，所以「不启动 Electron 就能复现问题」是这一层的存在理由
  *
- * 已落地（S3 + S4，见 docs/知识中心/技术方案.md §4.1）：
+ * 已实现（S3 + S4，见 docs/知识中心/技术方案.md §4.1）：
  *   agent/models.ts        gateway provider + createModelRegistry / pickModel
  *   agent/env.ts           NodeExecutionEnv 工厂
  *   session/manager.ts     会话操作（只返回数据，不打印）
@@ -17,7 +17,7 @@
  *   diagnostics/inspect.ts      脱敏的诊断摘要
  *   dev/crash-point.ts          崩溃埋点（默认不动作）
  *
- * 还没落地（S5，依赖 `@pi/shared-docs` 的 `app.*` 文档定义）：
+ * 还没实现（S5，依赖 `@pi/shared-docs` 的 `app.*` 文档定义）：
  *   harness/materialize.ts、agent/credentials.ts、frames/doc-hub.ts
  *
  * 不提前写用不到的抽象：没有第二个实现就不建接口。
@@ -60,6 +60,16 @@ export type { RegistryOptions, RegistrySummary } from "./harness/registry.ts"
 export { FrameHub } from "./frames/frame-hub.ts"
 export type { FrameHubOptions, FrameSink, OpenedFrame } from "./frames/frame-hub.ts"
 export { materializeView } from "./harness/materialize.ts"
+
+export { ApprovalBroker, DEFAULT_APPROVAL_TIMEOUT_MS } from "./approvals/broker.ts"
+export type {
+  ApprovalBrokerOptions,
+  ApprovalContextInput,
+  ApprovalInput,
+} from "./approvals/broker.ts"
+
+export { IpcRouter } from "./ipc/router.ts"
+export type { IpcRouterOptions } from "./ipc/router.ts"
 
 export { inspectHarness } from "./diagnostics/inspect.ts"
 export type {

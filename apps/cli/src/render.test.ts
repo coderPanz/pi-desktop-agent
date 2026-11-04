@@ -89,7 +89,7 @@ test("流式只补后缀：三帧拼出完整文本，不重复不倒退", () =>
   assert.equal(io.text(), "── 会话 #1 · 0 条历史 ──\n你好！")
 })
 
-test("落盘后切到最后一条回答，且不重复打印同一段文本", () => {
+test("写入库后切到最后一条回答，且不重复打印同一段文本", () => {
   const io = collector()
   const renderer = new ConversationRenderer({ out: io.out })
   renderer.open(opened(snapshot()))

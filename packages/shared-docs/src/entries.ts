@@ -1,5 +1,5 @@
 /**
- * 应用自己的条目 kind（`app.*`）。
+ * 应用自己自定义的条目 kind（`app.*`）
  *
  * 跟 SDK 的 `pi.*` 并列，但归应用管：`pi.*` 的条目带 `model` 字段、会喂给模型；
  * 这里的条目只给界面和审计看，不带 `model`，不进模型上下文。
@@ -32,6 +32,6 @@ export type ApprovalData = {
   decision: "approved" | "denied" | "expired"
 }
 
-/** 两个 kind 都是落盘契约：改名等于旧数据读不出来。 */
+/** 两个 kind 都是写入库契约：改名等于旧数据读不出来。 */
 export const UiActionEntry = defineEntry<UiActionData>("app.ui_action")
 export const ApprovalEntry = defineEntry<ApprovalData>("app.approval")

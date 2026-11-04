@@ -9,7 +9,7 @@ import { AppSettingsDoc } from "./settings.ts"
 import { AppWorkspaceDoc } from "./workspace.ts"
 
 /**
- * kind 是落盘契约：这些断言的价值不在于「现在的值对不对」，而在于**改它必须是有意识的**。
+ * kind 是写入库契约：这些断言的价值不在于「现在的值对不对」，而在于**改它必须是有意识的**。
  * 改这个测试的前提是想清楚了旧数据怎么办（迁移，或者接受读不出来）。
  */
 test("文档 kind 与作用域是契约值", () => {

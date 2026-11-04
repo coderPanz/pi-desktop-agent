@@ -1,5 +1,5 @@
 /**
- * 把 SDK 的会话视图转成线协议里的 `ViewSnapshot`。
+ * 把 SDK 的会话视图转成 IPC 上传输的 `ViewSnapshot`。
  *
  * 为什么要转：渲染进程不能依赖 `pi-durable`，所以需要一个地方把 SDK 结构换成
  * `@pi/shared-types` 声明的形状。只做两件事：挑字段、丢掉不合法的值。
@@ -41,7 +41,7 @@ function materializeConversation(view: ConversationView): ViewConversation {
 /** id 或 kind 不合法就丢掉这条；可选字段没有就不写。 */
 function materializeEntry(entry: EntryRecord): ViewEntry | undefined {
   if (typeof entry.id !== "number" || typeof entry.kind !== "string") return undefined
-  // SDK 落盘的 model 一定是数组，这里只挡明显不是数组的值
+  // SDK 存下来的 model 一定是数组，这里只挡明显不是数组的值
   const model = Array.isArray(entry.model) ? entry.model : undefined
   return {
     id: entry.id,
