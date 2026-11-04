@@ -12,7 +12,7 @@
 | 帧协议与副本同步 | ✅ | `shared-types/frame.ts` 契约 + `FrameHub` + CLI 消费方 |
 | 契约（IPC / 推送 / 错误码 / `app.*`） | ✅ 定义 | `shared-types`、`shared-docs`；渲染进程侧尚无实现 |
 | 存储门禁（`node:sqlite` + WAL） | ✅ 实测 | `pnpm gate`：Electron 45.0.0 / Node 24.22.0 |
-| 工具链（读写文件 / bash / 审批） | ⬜ | `packages/extensions/*` 为空包，注册表装 0 个 |
+| 工具链（读/列/写/改/bash + 三档审批） | ✅ | `packages/extensions/coding`：5 个工具 + `beforeTool` 审批；`pnpm test` 覆盖策略与边界，CLI 端到端实测读文件/列目录/拦截写文件/交互式批准 |
 | 桌面接线（`HarnessHost` + IPC） | ⬜ | 主进程只有窗口与安全配置，`window.pi` 仅 `debug.ping` |
 | 聊天界面 | ⬜ | 渲染进程是骨架页 |
 | 崩溃恢复实测 | ⬜ | `PI_CRASH_POINT` 五类场景未跑 |
@@ -20,30 +20,24 @@
 
 ## 2. 待办（按依赖顺序）
 
-### 2.1 工具链 —— 下一步，且不依赖 UI
-
-`@pi/ext-coding`：`read_file` / `list_dir` / `write_file` / `bash`，配套三档审批（allow / ask / deny）。
-
-- 没有工具，模型只能聊天，「本机工作台」的价值不成立。
-- 路径边界与危险命令分类必须是纯函数并有单测；`write_file` 与 `bash` 顺序执行。
-- 工具名落盘即契约，上线后不改。
-
-### 2.2 桌面接线
+### 2.1 桌面接线
 
 主进程持有 `HarnessHost`，实现 `IpcMap` / `PushMap`，`before-quit` 按「停推送 → 关会话订阅 → 关 Harness」收口。
-这一步只依赖 2.1 之外已完成的部分，可先于界面完成，用一个最小页面验证 `conv.open` 的 `seq` 连续性。
+这一步只依赖已完成的部分，可先于界面完成，用一个最小页面验证 `conv.open` 的 `seq` 连续性。
 
-### 2.3 聊天界面
+审批在 Electron 侧的通道也在这里接：工具只认一个注入的 `Approver`，桌面实现换成写 `app.approvals` 一条 pending + 等 UI 答复即可（`apps/cli/src/approvals.ts` 的单消费者队列可直接对照）。
+
+### 2.2 聊天界面
 
 渲染进程持有只读副本：`useSyncExternalStore` + 稳定引用、流式与落盘不同显、工具卡 `running→done` 不重复、
 排队可见、停止不伪造消息、丢帧触发 resync。
 
-### 2.4 崩溃恢复实测与打包
+### 2.3 崩溃恢复实测与打包
 
 `PI_CRASH_POINT` 五类场景各留「重启后第一次看到了什么」的证据；随后 `pnpm package` 做打包冒烟，
 确认 `node:sqlite` 在 asar 与打包后的路径/ABI 正常。
 
-### 2.5 后续能力（可与界面并行）
+### 2.4 后续能力（可与界面并行）
 
 | 能力 | 依赖 | 说明 |
 |---|---|---|

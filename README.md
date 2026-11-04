@@ -17,7 +17,7 @@
 | 持久化与重启恢复（SQLite + WAL，重开同一数据根接着用） | ✅ |
 | 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ 契约已落地，消费方是 CLI |
 | 契约（IPC / 推送 / 错误码 / `app.*` 文档） | ✅ 代码里，见 `packages/shared-types`、`packages/shared-docs` |
-| 工具（读写文件 / bash / 审批） | ⬜ 扩展包为空，注册表当前装 0 个工具 |
+| 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，终端内可审批 |
 | 桌面界面（Harness 接线 / IPC / 聊天 UI） | ⬜ 主进程只有窗口与安全配置 |
 
 桌面应用目前**还不能对话**：主进程尚未持有 `HarnessHost`，`window.pi` 只有 `debug.ping`。
@@ -48,6 +48,22 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 ```
 
 `Ctrl+C` 只中断当前回答，不退出进程。其他输入一律作为消息提交给模型。
+
+### 工具与审批
+
+模型能用的工具：`read`、`list_dir`、`write`、`edit`、`bash`。
+
+工作区（`<数据根>/workspace`）是工具的根目录：相对路径按它解析，`read`/`list_dir`/`write`/`edit` 的路径必须落在它里面（越界路径与指向外面的软链一律拒绝），`bash` 的起点 cwd 也是它。但这不是沙箱：`bash` 里 `cd ..` 能碰到外面，那一步靠审批。
+
+审批分三档：
+
+| 档 | 工具 | 行为 |
+|---|---|---|
+| `allow` | `read`、`list_dir`、只读命令（`ls` / `cat` / `git status` …） | 直接执行 |
+| `ask` | `write`、`edit`、其余命令 | 终端提示 `审批请求：… 允许这一次执行吗？[y/N]`，输 `y` 放行 |
+| `deny` | 抹盘、关机、根级删除、fork 炸弹 | 不执行，给模型一条拒绝说明 |
+
+非交互（管道输入、`-p`、`pnpm smoke`）时 `ask` 一律按**拒绝**处理：没人能回答的问题不该假装有人回答。
 
 ## 命令一览
 
@@ -163,6 +179,7 @@ cd apps/desktop/node_modules/electron && node install.js
 ## 已知限制
 
 - 桌面应用还不能对话：无 `HarnessHost`、无 IPC 契约实现、渲染进程是骨架页。
-- 工具链未接通：`packages/extensions/*` 是空包，注册表装 0 个扩展，模型没有工具可用。
+- Electron 侧审批通道尚未接入：工具只在终端里能让人批准；桌面上要等 §2.1 的 `app.approvals` + 事件门。
+- `bash` 本身可以 `cd` 到工作区外（边界检查只管 cwd 的起点），靠审批阑住；V1 不宣称沙箱。
 - `pnpm package` 从未跑过；Electron 打包后 `node:sqlite` 的 ABI 与 asar 内动态 import 都未验证。
 - V1 不做：多窗口写同一会话、云端同步、多进程打开同一 SQLite、插件市场、移动端。

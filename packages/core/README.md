@@ -30,7 +30,7 @@
 | `harness/open-harness.ts` | `storage → Harness.open → resume → root` | 顺序是验收口径；把顺序写死，调用方只提供零件 |
 | `harness/host.ts` | `HarnessHost` | 唯一有内部依赖的文件；`#closing ??=` 保证 `close()` 幂等 |
 | `harness/materialize.ts` | `materializeView` | SDK 视图 → `@pi/shared-types` 的副本结构；坏条目/坏文档丢弃而不抛错 |
-| `harness/registry.ts` | `createPiRegistry` / `summarizeRegistry` | 内置扩展由调用方注入（现在默认装 0 个，是刻意的）；注册表可热改 |
+| `harness/registry.ts` | `createPiRegistry` / `summarizeRegistry` | 内置扩展由调用方注入（core 不知道有哪些工具）；注册表可热改 |
 | `frames/frame-hub.ts` | 多会话 `watch → seq → sink` | `open()` 不重放历史；每会话一条单调 seq；慢 sink 不阻塞回调 |
 | `diagnostics/inspect.ts` | `inspectHarness` | 脱敏：不带 input / 工具参数 / 模型消息 / 堆栈 |
 | `dev/crash-point.ts` | `crashPoint("after-submit")` 等 5 个埋点 | 用 `SIGKILL` 而非 `process.exit()`，才像断电；默认什么都不做 |

@@ -50,6 +50,9 @@ importers:
       '@pi/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pi/ext-coding':
+        specifier: workspace:*
+        version: link:../../packages/extensions/coding
       '@pi/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types

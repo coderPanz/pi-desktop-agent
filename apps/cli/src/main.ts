@@ -27,9 +27,14 @@ import {
   inspectHarness,
   PROVIDER_ID,
   SessionManager,
+  summarizeRegistry,
   UserError,
   workspacePaths,
 } from "@pi/core"
+import { createCodingExtension } from "@pi/ext-coding"
+
+import { CliEventQueue, createTerminalApprover, formatApprovalPrompt, parseApprovalAnswer } from "./approvals.ts"
+import type { PendingApproval } from "./approvals.ts"
 
 import { DEFAULT_PARTIAL_INTERVAL_MS, HELP_TEXT, parseArgs, UsageError } from "./args.ts"
 import { COMMAND_HELP, CommandError, parseCommand } from "./commands.ts"
@@ -60,7 +65,25 @@ async function main(argv: readonly string[]): Promise<number> {
   const storage = await createStorage(
     args.memory ? { kind: "memory" } : { kind: "file", file: paths.db },
   )
-  const registry = createPiRegistry()
+
+  /**
+   * 输入与审批共用一条 stdin：只有 REPL 那一个消费者，审批请求也排进同一个队列。
+   * 一次性模式（`-p`）与管道输入没人能回答 -> 审批一律拒绝。
+   */
+  const events = new CliEventQueue()
+  /** 有没有人坐在终端前能回答审批：一次性模式与管道输入都不算。 */
+  const interactive = args.mode === "repl" && process.stdin.isTTY === true
+  const registry = createPiRegistry({
+    extensions: [
+      createCodingExtension({
+        workspace: paths.workspace,
+        approve: createTerminalApprover({ queue: events, interactive }),
+      }),
+    ],
+  })
+
+  // 装的是什么扩展与工具：`PI_LOG_LEVEL=debug` 时打一行，验「工具真的注册上了」看这里。
+  logDebug("registry", summarizeRegistry(registry.snapshot()))
 
   let models: ReturnType<typeof createModelRegistry> | undefined
   const resolveModels = () => (models ??= createModelRegistry())
@@ -118,7 +141,7 @@ async function main(argv: readonly string[]): Promise<number> {
     await openConversation(renderedId)
     return args.mode === "once"
       ? await runOnce(manager, args.prompt ?? "")
-      : await runRepl({ manager, host, openConversation })
+      : await runRepl({ manager, host, openConversation, events, interactive })
   } finally {
     // 收口顺序固定：先停帧，再关会话订阅，最后关 Harness（它会连存储一起收）。
     await hub.closeAll()
@@ -139,16 +162,23 @@ async function runOnce(manager: SessionManager, prompt: string): Promise<number>
   return 0
 }
 
-type ReplInput = {
+type ReplInput = CommandInput & {
+  /** 输入与审批共用的队列；只有 REPL 循环消费它。 */
+  readonly events: CliEventQueue
+  /** 与审批通道同一个判定：有没有人能回答。 */
+  readonly interactive: boolean
+}
+
+/** 命令处理只要能操作会话与宿主的能力；审批队列只归 REPL 循环管。 */
+type CommandInput = {
   readonly manager: SessionManager
   readonly host: HarnessHost
   readonly openConversation: (id: ConversationId) => Promise<void>
 }
 
 /** 运行 REPL：交互式命令行 */
-async function runRepl({ manager, host, openConversation }: ReplInput): Promise<number> {
-  // 检查是否是交互式终端（TTY）：如果是，则启用行编辑功能（Ctrl+C 中断当前回答，不退出进程）
-  const interactive = process.stdin.isTTY === true
+async function runRepl({ manager, host, openConversation, events, interactive }: ReplInput): Promise<number> {
+  // 交互式终端才开行编辑：管道输入下 readline 的终端控制字符会污染输出。
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -174,17 +204,45 @@ async function runRepl({ manager, host, openConversation }: ReplInput): Promise<
 
   let code = 0
 
-  // 创建异步迭代器：管道输入或 Ctrl+D 时读流会结束，`question()` 在 EOF 上永远不 resolve，整个进程会挂在未决的 await 上。
-  const lines = rl[Symbol.asyncIterator]()
+  // 唯一的 stdin 消费者：用户输入与审批请求进同一个队列，不再另开 readline 抢输入。
+  rl.on("line", (line) => events.pushLine(line))
+  rl.on("close", () => events.close())
+
+  /** 正在等人回答的审批；同一时刻只留一个，后到的直接拒（工具已按 sequential 排队）。 */
+  let pending: PendingApproval | undefined
+
   try {
     for (;;) {
-      if (interactive) process.stdout.write(PROMPT)
-      const next = await lines.next()
-      if (next.done === true) break // Ctrl+D 或输入结束
+      if (pending === undefined && interactive) process.stdout.write(PROMPT)
+      const event = await events.take()
+      if (event === undefined) break // Ctrl+D 或输入结束
+
+      // 审批请求不是输入行，先亮出来，等下一行答复。
+      if (event.kind === "approval") {
+        if (pending !== undefined) {
+          event.settle(false)
+          continue
+        }
+        pending = event
+        process.stdout.write(`\n${formatApprovalPrompt(event.request)}`)
+        continue
+      }
+
+      // 有待批请求时，这一行是答复，不是命令。
+      if (pending !== undefined) {
+        const approved = parseApprovalAnswer(event.line)
+        const took = pending.settle(approved)
+        pending = undefined
+        // 审批可能已被取消或超时结束：那时这一行不构成一次真实的拒绝。
+        process.stdout.write(
+          !took ? "（这条审批已经结束，本次输入未生效）\n" : approved ? "已批准\n" : "已拒绝\n",
+        )
+        continue
+      }
 
       try {
         // 解析也在 try 里：命令拼错是用户输入问题，不是进程启动失败。
-        const command = parseCommand(next.value)
+        const command = parseCommand(event.line)
         if (command === undefined) continue
         if (command.kind === "quit") break
 
@@ -206,6 +264,7 @@ async function runRepl({ manager, host, openConversation }: ReplInput): Promise<
       }
     }
   } finally {
+    events.close()
     rl.close()
   }
   return code
@@ -214,7 +273,7 @@ async function runRepl({ manager, host, openConversation }: ReplInput): Promise<
 /** 返回 true 表示要退出 REPL。 */
 async function runCommand(
   command: NonNullable<ReturnType<typeof parseCommand>>,
-  { manager, host, openConversation }: ReplInput,
+  { manager, host, openConversation }: CommandInput,
 ): Promise<boolean> {
   switch (command.kind) {
     case "send": {
