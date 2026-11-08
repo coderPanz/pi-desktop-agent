@@ -88,7 +88,7 @@ async function main(argv: readonly string[]): Promise<number> {
   let models: ReturnType<typeof createModelRegistry> | undefined
   const resolveModels = () => (models ??= createModelRegistry())
 
-  // root 会话首次创建时把模型写进 agent 配置；之后不再重复写。
+  // root 首次创建时配置模型；已有 root 缺模型时只补模型，保留已保存的选择。
   const initialAgent = readInitialAgent()
 
   // 打开 HarnessHost：初始化存储、模型注册表、环境配置、进度设置、初始化代理配置、日志记录

@@ -5,6 +5,7 @@ import type { ApprovalDecision, ApprovalView, ConversationSummary, HostInfo, Hos
 import type { IpcErrorPayload } from "./errors.ts"
 import type { ConversationId, EntryId, OpenedView } from "./frame.ts"
 import type { JsonObject } from "./json.ts"
+import type { InputSubmissionView } from "./submission.ts"
 
 /** 忙时策略：`followUp` 等当前轮结束、`steer` 插到工具轮边界、`reject` 直接拒。 */
 export type WhenBusy = "steer" | "followUp" | "reject"
@@ -29,6 +30,11 @@ export type IpcMap = {
   "conv.open": {
     readonly request: { readonly conversationId: ConversationId }
     readonly response: OpenedView
+  }
+  /** 当前/最近已开始输入的持久化状态；切换/重启后恢复终态失败提示。 */
+  "conv.submission": {
+    readonly request: { readonly conversationId: ConversationId }
+    readonly response: InputSubmissionView | undefined
   }
   "conv.create": {
     readonly request: Record<string, never>

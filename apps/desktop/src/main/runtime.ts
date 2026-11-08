@@ -31,6 +31,7 @@ import {
   gatewayConfigFromEnv,
   HarnessHost,
   IpcRouter,
+  materializeSubmission,
   PROVIDER_ID,
   SessionManager,
   summarizeRegistry,
@@ -145,7 +146,18 @@ export class DesktopRuntime {
     const hub = new FrameHub(host.harness, {
       onError: (error) => log("frame sink 抛错", { message: String(error) }),
     })
-    const stopSink = hub.addSink((frame: ViewFrame) => options.publish("view", frame))
+    const stopFrames = hub.addSink((frame: ViewFrame) => options.publish("view", frame))
+    const stopSubmissions = host.harness.subscribeCommits((publication) => {
+      for (const change of publication.changes) {
+        if (change.type !== "submission") continue
+        const view = materializeSubmission(change.value)
+        if (view !== undefined) options.publish("submission", view)
+      }
+    })
+    const stopSink = (): void => {
+      stopFrames()
+      stopSubmissions()
+    }
 
     const broker = new ApprovalBroker({
       harness: host.harness,
@@ -155,7 +167,7 @@ export class DesktopRuntime {
     })
     approvalsRef.current = broker
 
-    const config = readGatewayConfig()
+    const rootAgent = await host.root.agent(BACKGROUND_CONTEXT)
     const info: HostInfo = {
       appVersion: options.appVersion,
       electron: options.versions.electron,
@@ -164,7 +176,7 @@ export class DesktopRuntime {
       platform: options.platform,
       dataDir: paths.root,
       rootConversationId: manager.conversationId,
-      model: config === undefined ? undefined : { provider: PROVIDER_ID, modelId: config },
+      model: rootAgent.model,
     }
 
     const router = new IpcRouter({

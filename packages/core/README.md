@@ -17,7 +17,7 @@
 
 ## 模块地图
 
-`src/index.ts` 是唯一入口（`package.json` 的 `exports` 只有 `"."`），内部 13 个模块：
+`src/index.ts` 是唯一入口（`package.json` 的 `exports` 只有 `"."`），内部模块：
 
 | 模块 | 职责 | 关键点 |
 |---|---|---|
@@ -27,9 +27,10 @@
 | `paths.ts` | `workspacePaths` / `ensureWorkspacePaths` | 根由调用方注入；只算路径 + 建目录，不建库 |
 | `errors.ts` | `UserError` / `ConfigError` | 与 SDK 的 `SessionFailed` 分工：前者可继续，后者必须重建 Harness |
 | `storage/create-storage.ts` | 文件库（`node:sqlite`，WAL）/ 内存库 | **失败不降级**到内存库；一个库文件只允许一个 Harness |
-| `harness/open-harness.ts` | `storage → Harness.open → resume → root` | 顺序就是验收标准；把顺序写死，调用方只提供零件 |
+| `harness/open-harness.ts` | `storage → Harness.open → root/补模型 → resume` | 恢复任务前先准备模型；只补空模型，不覆盖已有选择 |
 | `harness/host.ts` | `HarnessHost` | 唯一有内部依赖的文件；`#closing ??=` 保证 `close()` 幂等 |
 | `harness/materialize.ts` | `materializeView` | SDK 视图 → `@pi/shared-types` 的副本结构；坏条目/坏文档丢弃而不抛错 |
+| `harness/submissions.ts` | 用户输入持久化状态投影 | 终态不依赖 live；写入与后续排队提交不遮住当前失败 |
 | `harness/registry.ts` | `createPiRegistry` / `summarizeRegistry` | 内置扩展由调用方注入（core 不知道有哪些工具）；注册表可热改 |
 | `frames/frame-hub.ts` | 多会话 `watch → seq → sink` | `open()` 不重放历史；每会话一条单调 seq；慢 sink 不阻塞回调 |
 | `diagnostics/inspect.ts` | `inspectHarness` | 脱敏：不带 input / 工具参数 / 模型消息 / 堆栈 |
@@ -37,7 +38,7 @@
 
 ## 公共导出
 
-`index.ts` 对外承诺 **25 个值 + 24 个类型**，按模块分组：
+公共导出以 `index.ts` 为准，按模块分组：
 
 | 分组 | 值 | 类型 |
 |---|---|---|
@@ -109,7 +110,7 @@ const manager = await SessionManager.open({ harness: host.harness, storage })
 2. **失败不降级**：存储打不开就抛，不偷偷换内存库；否则「数据没写入库」会被当成「功能正常」。
 3. **没有第二个实现就不建接口**：core 里没有任何 `interface` / 抽象基类，`SessionManager` / `HarnessHost` /
    `FrameHub` 都是具体类。
-4. **顺序即契约**：`storage → open → resume → root`、`open()` 不重放历史、`fork` 不猜 entryId（没条目就报错）。
+4. **顺序即契约**：`storage → open → root/补模型 → resume`、`open()` 不重放历史、`fork` 不猜 entryId（没条目就报错）。
 5. **不打印**：core 返回数据，格式化交给 `apps/cli/render.ts` 与渲染进程。
 
 ## 测试

@@ -12,9 +12,11 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { ConversationSummary } from "@pi/shared-types"
 
 import { UserError } from "../errors.ts"
+import { latestInputSubmission } from "../harness/submissions.ts"
 import type { Context } from "@earendil-works/chord"
 // InboxDoc / LiveDoc 是 durable 【已提交】的会话状态：排队消息和当前运行状态。
 import {
+  AgentDoc,
   InboxDoc,
   LiveDoc,
   ROOT_CONVERSATION_ID,
@@ -183,12 +185,12 @@ export class SessionManager {
     context: Context = BACKGROUND_CONTEXT,
     options: { readonly agent?: AgentChange } = {},
   ): Promise<Conversation> {
+    const rootAgent = await this.#harness.snapshot(AgentDoc, ROOT_CONVERSATION_ID, context)
     return await this.#harness.createConversation(
       {
-        // ownership 决定生命周期；ownerless 不会随着某个 task 的结束而被级联取消。
-        ownership: { kind: "ownerless" }, // ownership所有权 的 类型为 无主的
-        // 传 agent 时覆盖新会话的初始 agent 配置；省略则使用默认配置。
-        ...(options.agent ?? {}),
+        ownership: { kind: "ownerless" },
+        // SDK 的 ownerless 会话从空 agent 开始；模型默认取 root，显式覆盖（含 null）优先。
+        agent: { ...options.agent, model: options.agent?.model === undefined ? rootAgent?.model : options.agent.model },
       },
       context,
     )
@@ -272,6 +274,11 @@ export class SessionManager {
     const conversation = await this.#conversation(context)
     const taskId = await conversation.compact(instructions, context)
     return await this.#harness.waitForTask(taskId, context)
+  }
+
+  /** 当前/最近已开始用户输入的持久化状态；后续排队输入不遮住当前轮次失败。 */
+  async latestSubmission(conversationId: ConversationId, context: Context = BACKGROUND_CONTEXT) {
+    return await latestInputSubmission(this.#storage, conversationId, context)
   }
 
   /** 读取当前会话的排队项；`pi.inbox` 尚未创建时按空数组处理 */

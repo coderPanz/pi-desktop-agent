@@ -60,6 +60,7 @@ export type { RegistryOptions, RegistrySummary } from "./harness/registry.ts"
 export { FrameHub } from "./frames/frame-hub.ts"
 export type { FrameHubOptions, FrameSink, OpenedFrame } from "./frames/frame-hub.ts"
 export { materializeView } from "./harness/materialize.ts"
+export { latestInputSubmission, materializeSubmission } from "./harness/submissions.ts"
 
 export { ApprovalBroker, DEFAULT_APPROVAL_TIMEOUT_MS } from "./approvals/broker.ts"
 export type {

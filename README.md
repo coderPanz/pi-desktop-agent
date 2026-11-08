@@ -14,16 +14,16 @@
 | 能力 | 状态 |
 |---|---|
 | 终端交互（发消息 / 中断 / 排队 / 分叉 / 重置 / 压缩 / 诊断） | ✅ `pnpm cli` |
-| 持久化与重启恢复（SQLite + WAL，重开同一数据根接着用） | ✅ |
-| 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ 契约已实现，消费方是 CLI |
+| 持久化与普通重启恢复（SQLite + WAL） | ✅ 历史与文件已实测恢复；执行中强杀恢复尚未验收 |
+| 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ CLI 与桌面均已接入 |
 | 契约（IPC / 推送 / 错误码 / `app.*` 文档） | ✅ 代码里，见 `packages/shared-types`、`packages/shared-docs` |
-| 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，终端内可审批 |
-| 桌面接线（Harness / IPC / 帧推送 / 审批） | ✅ 最小页可对话、可审批 |
-| 聊天界面（消息、工具卡、审批、排队、流式、Markdown、会话操作） | ✅ 可用，细节待补 |
+| 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，CLI 与桌面均可审批 |
+| 桌面接线（Harness / IPC / 帧推送 / 审批） | ✅ root 会话已跑通真实模型与工具审批 |
+| 聊天界面（消息、工具卡、审批、排队、流式、Markdown） | ✅ Apple 风格浅色工作区；状态刷新与体验细节待补 |
+| 默认启动 / 新建会话 / 终态失败提示 | ✅ 开发目录加载 `.env`，新建默认使用 root 模型，终态失败可跨重启展示 |
 
-桌面应用现在能对话了：`pnpm dev` 或 `pnpm build && pnpm start`，主进程持有 `HarnessHost`，
-渲染进程通过 `window.pi.invoke` 走 IPC、靠推送拿帧。界面还是最小实现，完整界面见 ROADMAP。
-两者的运行时是同一套 `@pi/core`。
+主进程持有 `HarnessHost`，渲染进程通过 `window.pi.invoke` 走 IPC、靠推送拿已提交状态。
+CLI 与桌面共用 `@pi/core`。默认对话链路已跑通；存储失败恢复、执行中强杀与安装包验收仍见 ROADMAP。
 
 ## 快速开始
 
@@ -34,7 +34,8 @@ cp .env.example .env                          # 填 ANTHROPIC_API_KEY / ANTHROPI
 pnpm cli                                      # 终端交互，数据落在 ./.data
 pnpm cli --memory                             # 内存库，不写文件（验收与排障用）
 pnpm cli --data-dir /tmp/pi-demo              # 指定数据根
-PI_DATA_DIR=/tmp/pi-demo pnpm dev             # 桌面：指定数据根（排障/自测不碰真实 userData）
+PI_DATA_DIR=/tmp/pi-demo pnpm dev             # 桌面自动读根目录 .env，指定独立数据根
+pnpm build && pnpm start                      # 桌面构建产物，同样自动加载 .env
 pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退出
 ```
 
@@ -131,21 +132,24 @@ cli      ──▶ core / shared-types
 
 ### 三层运行时
 
-1. **storage → open → resume → root**：启动顺序固定且可日志化（`PI_LOG_LEVEL=debug`）。
-2. **SessionManager**：会话操作（submit / abort / fork / reset / compact / inbox / view），只返回数据、不打印，CLI 与将来的 IPC 共用。
+1. **storage → open → root/补配置 → resume**：恢复任务前先准备模型，启动顺序可日志化（`PI_LOG_LEVEL=debug`）。
+2. **SessionManager**：会话操作（submit / abort / fork / reset / compact / inbox / view），只返回数据、不打印，CLI 与桌面 IPC 共用。
 3. **FrameHub**：把「会话视图变了」变成 `(convId, seq, ops)`，`open()` 不补发历史，每会话 seq 单调 +1。
 
 ## 配置
 
-`.env`（不入库）里的变量：
+CLI 与未打包桌面会加载根目录 `.env`（不入库），已导出的环境变量优先。修改 `.env` 后重启应用。
+root 缺模型时启动会补配置，已有模型选择不覆盖；新建会话默认取 root 模型，分叉沿用父会话配置。
+
+`.env` 里的变量：
 
 | 变量 | 必需 | 说明 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | 是 | 网关 API key，每次请求时解析 |
 | `ANTHROPIC_BASE_URL` | 否 | 默认 `https://api.anthropic.com` |
-| `ANTHROPIC_MODEL` | 是 | 网关支持的模型 id。缺它会直接报错，不猜模型 |
+| `ANTHROPIC_MODEL` | 是 | 网关支持的模型 id。不猜模型；缺配置或模型不可用时不能生成回答 |
 | `PI_LOG_LEVEL` | 否 | `debug` 时把启动链路打到 stderr |
-| `PI_CRASH_POINT` | 否 | 崩溃埋点（`after-submit` / `during-tool` / …），命中即 `SIGKILL` |
+| `PI_CRASH_POINT` | 否 | 已定义检查点名称与 `SIGKILL` 函数，但运行链路尚未调用；仅设置变量不会触发 |
 | `PI_DEV_SERVER_URL` | 否 | 由 `pnpm dev` 注入 |
 
 模型网关走 Anthropic Messages 协议，并自带两个请求头（`user-agent: claude-cli/…`、`x-app: cli`）——
@@ -181,10 +185,12 @@ cd apps/desktop/node_modules/electron && node install.js
 
 ## 已知限制
 
-- 桌面界面是最小页：没有 Markdown 渲染、没有分叉/压缩入口、生成失败的错误不展示（只在会话记录里）。
+- 打包后的应用不自动寻找开发仓库 `.env`，需显式注入环境配置；安装包的配置入口与运行行为尚未验收。
+- 已有会话的非空模型配置不被环境变量覆盖；更换模型仍缺少桌面设置入口。旧版留下的非 root 空模型会话尚不自动迁移，可使用新建会话。
+- 会话列表的忙碌/排队状态不会随任务结束自动刷新。
+- 宿主尚未监听 `HarnessHost.closed` 的存储失败结果，界面没有完整的不可用/恢复状态。
 - 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
-  实测 `InMemoryCredentialStore is not a constructor`）；打包时靠 electron-builder 带上 node_modules。
-- Electron 侧审批通道尚未接入：工具只在终端里能让人批准；桌面上要等 §2.1 的 `app.approvals` + 事件门。
+  实测 `InMemoryCredentialStore is not a constructor`）；打包时需要确认 electron-builder 带上这些依赖。
 - `bash` 本身可以 `cd` 到工作区外（边界检查只管 cwd 的起点），靠审批阑住；V1 不宣称沙箱。
 - `pnpm package` 从未跑过；Electron 打包后 `node:sqlite` 的 ABI 与 asar 内动态 import 都未验证。
 - V1 不做：多窗口写同一会话、云端同步、多进程打开同一 SQLite、插件市场、移动端。

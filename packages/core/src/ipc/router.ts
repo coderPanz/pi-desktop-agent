@@ -114,6 +114,12 @@ export class IpcRouter {
         return opened as IpcResponse<K>
       }
 
+      case "conv.submission": {
+        const id = conversationIdOf(input)
+        await this.#conversation(id, context)
+        return (await this.#manager.latestSubmission(id, context)) as IpcResponse<K>
+      }
+
       case "conv.create": {
         const conversation = await this.#manager.create(context)
         return { conversationId: conversation.id } as IpcResponse<K>

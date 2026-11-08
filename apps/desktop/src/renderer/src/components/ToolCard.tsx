@@ -7,6 +7,7 @@
 import { useState } from "react"
 
 import type { ToolSlot } from "../docs.ts"
+import { Icon } from "./Icon.tsx"
 
 const LABEL: Record<ToolSlot["status"], string> = {
   pending: "等待中",
@@ -15,9 +16,9 @@ const LABEL: Record<ToolSlot["status"], string> = {
 }
 
 const COLOR: Record<ToolSlot["status"], string> = {
-  pending: "text-[#9aa2b1]",
-  running: "text-[#fbbf24]",
-  done: "text-[#4ade80]",
+  pending: "bg-subtle text-secondary",
+  running: "bg-warning-soft text-warning",
+  done: "bg-success-soft text-success",
 }
 
 /** 输出只展示前几百字符；完整结果在会话记录里。 */
@@ -33,35 +34,30 @@ export function ToolCard({ slot }: { readonly slot: ToolSlot }) {
       : `（省略 ${String(slot.droppedLines ?? 0)} 行 / ${String(slot.droppedBytes ?? 0)} 字节）`
 
   return (
-    <div className="rounded border border-[#262b36] bg-[#12151c]">
-      <button
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="font-mono text-[11px] text-[#6b7280]">{slot.name}</span>
-        <span className={`text-[11px] ${COLOR[slot.status]}`}>{LABEL[slot.status]}</span>
-        {slot.isError ? <span className="text-[11px] text-[#f87171]">出错</span> : null}
-        <span className="ml-auto text-[10px] text-[#4b5563]">{open ? "收起" : "展开"}</span>
+    <div className="overflow-hidden rounded-xl border border-divider bg-surface">
+      <button className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left hover:bg-subtle/70" onClick={() => setOpen((value) => !value)} aria-expanded={open || slot.isError}>
+        <Icon name="tool" className="text-tertiary" />
+        <span className="font-mono text-[12px] font-medium text-primary">{slot.name}</span>
+        <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${COLOR[slot.status]}`}>{LABEL[slot.status]}</span>
+        {slot.isError ? <span className="rounded-md bg-danger-soft px-1.5 py-0.5 text-[10px] font-medium text-danger">出错</span> : null}
+        <span className="ml-auto text-[11px] text-tertiary">{open ? "收起" : "展开"}</span>
+        <Icon name="chevron" className={`pi-disclosure size-3 text-tertiary ${open ? "rotate-90" : ""}`} />
       </button>
 
       {slot.nested.length === 0 ? null : (
-        <div className="space-y-1 border-t border-[#1a1f28] px-3 py-2">
+        <div className="space-y-2 border-t border-divider bg-subtle/40 px-4 py-3">
           {slot.nested.map((nested) => (
-            <div key={nested.callId} className="font-mono text-[11px] text-[#6b7280]">
-              ↳ {nested.name} {LABEL[nested.status]}
+            <div key={nested.callId} className="flex items-center gap-2 font-mono text-[11px] text-secondary">
+              <span className="text-tertiary">↳</span>{nested.name}<span className="ml-auto">{LABEL[nested.status]}</span>
             </div>
           ))}
         </div>
       )}
 
       {open || slot.isError ? (
-        <div className="border-t border-[#1a1f28] px-3 py-2">
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-[#9aa2b1]">
-            {preview === "" ? "（没有输出）" : preview}
-          </pre>
-          {dropped === "" ? null : (
-            <p className="mt-1 text-[10px] text-[#4b5563]">{dropped}</p>
-          )}
+        <div className="border-t border-divider bg-subtle/70 px-4 py-3">
+          <pre className="max-h-64 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-secondary">{preview === "" ? "（没有输出）" : preview}</pre>
+          {dropped === "" ? null : <p className="mt-2 text-[11px] text-tertiary">{dropped}</p>}
         </div>
       ) : null}
     </div>

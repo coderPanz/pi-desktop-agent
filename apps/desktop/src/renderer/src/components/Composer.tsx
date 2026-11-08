@@ -6,6 +6,8 @@
  */
 import { useState } from "react"
 
+import { Icon } from "./Icon.tsx"
+
 export type ComposerProps = {
   readonly disabled: boolean
   readonly running: boolean
@@ -24,36 +26,35 @@ export function Composer({ disabled, running, onSend, onAbort }: ComposerProps) 
   }
 
   return (
-    <div className="flex items-end gap-2">
-      <textarea
-        className="max-h-40 min-h-[44px] flex-1 resize-y rounded border border-[#262b36] bg-[#12151c] px-3 py-2 text-[13px] text-[#e6e8ef] outline-none focus:border-[#3b82f6]"
-        placeholder={disabled ? "先选一个会话…" : "说点什么…（Enter 发送，Shift+Enter 换行）"}
-        rows={1}
-        value={draft}
-        disabled={disabled}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault()
-            send()
-          }
-        }}
-      />
-      <button
-        className="rounded bg-[#1d4ed8] px-3 py-2 text-[13px] text-[#e0e7ff] disabled:opacity-40"
-        disabled={disabled || draft.trim() === ""}
-        onClick={send}
-      >
-        发送
-      </button>
-      <button
-        className="rounded border border-[#262b36] px-3 py-2 text-[13px] text-[#9aa2b1] disabled:opacity-40"
-        disabled={!running}
-        onClick={onAbort}
-        title="中断当前回答（等 pi.live.run 消失后生效）"
-      >
-        停止
-      </button>
+    <div className="shrink-0 px-6 pt-3 pb-5">
+      <div className="mx-auto max-w-[760px]">
+        <div className="flex items-end gap-2 rounded-2xl border border-control-border bg-surface p-3 shadow-input transition-[border-color,box-shadow] duration-150 focus-within:border-accent/50 focus-within:ring-3 focus-within:ring-accent/10">
+          <textarea
+            aria-label="消息输入"
+            className="max-h-40 min-h-12 min-w-0 flex-1 resize-y bg-transparent px-1 py-2 text-[14px] leading-6 text-primary outline-none placeholder:text-tertiary"
+            placeholder={disabled ? "先选一个会话…" : "说点什么…"}
+            rows={1}
+            value={draft}
+            disabled={disabled}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                send()
+              }
+            }}
+          />
+          <div className="flex shrink-0 items-center gap-1.5 pb-1">
+            <button className="flex h-8 items-center gap-1.5 rounded-lg border border-control-border bg-subtle/60 px-2.5 text-[12px] font-medium text-secondary hover:bg-subtle active:bg-hover" disabled={!running} onClick={onAbort} title="中断当前回答（等 pi.live.run 消失后生效）">
+              <Icon name="stop" className="size-3" />停止
+            </button>
+            <button className="flex h-8 items-center gap-1 rounded-lg bg-accent px-3 text-[12px] font-medium text-white shadow-control hover:bg-accent-hover active:bg-accent-active" disabled={disabled || draft.trim() === ""} onClick={send}>
+              发送<Icon name="arrow-up" className="size-3.5" />
+            </button>
+          </div>
+        </div>
+        <p className="mt-2.5 text-center text-[11px] text-tertiary">Enter 发送 · Shift+Enter 换行</p>
+      </div>
     </div>
   )
 }

@@ -1,9 +1,9 @@
 /**
- * 打开 Harness 的固定顺序：storage → open → resume → root
+ * 打开 Harness：storage → open → root/补配置 → resume，恢复任务前先准备模型。
  */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { Context } from "@earendil-works/chord"
-import { Harness } from "@earendil-works/pi-durable"
+import { AgentDoc, Harness } from "@earendil-works/pi-durable"
 import type {
   AgentChange,
   Conversation,
@@ -40,7 +40,7 @@ export type OpenHarnessOptions = {
   readonly onReport?: (error: unknown, info: ReportInfo) => void
   /** 建会话/分叉时写入文档初值 */
   readonly conversationCreated?: HarnessOptions["conversationCreated"]
-  /** 建 root 会话时应用的 agent 配置 只在 root 首次创建时生效。 */
+  /** root 首次创建的配置；已有 root 缺模型时只补模型，不覆盖已保存的选择。 */
   readonly agent?: AgentChange
   /** 启动过程日志（一行一条）；不传则不打印。 */
   readonly log?: (line: string, detail?: Record<string, unknown>) => void
@@ -80,14 +80,22 @@ export async function openHarness(
     context,
   )
 
-  harness.resume()
-  log("harness resumed")
-
   const root = await harness.root(
     context,
     options.agent === undefined ? undefined : { agent: options.agent },
   )
+  const model = options.agent?.model
+  if (model != null) {
+    // root() 不会重配既有会话；修复早期未配置启动留下的空模型，保留其他字段与历史。
+    await harness.commit(async (tx) => {
+      const agent = await tx.doc(AgentDoc, root.id)
+      if (agent.model === undefined) agent.model = { ...model }
+    }, context)
+  }
   log("root conversation ready", { conversationId: root.id })
+
+  harness.resume()
+  log("harness resumed")
 
   return { harness, root, closed: harness.closed }
 }

@@ -38,6 +38,7 @@ const CHANNEL_LIST = [
   "app.status", // 宿主健康度快照：调度状态与任务/提交计数
   "conv.list", // 会话列表，含忙碌与排队数
   "conv.open", // 打开会话：返回副本起点 + 起始帧号
+  "conv.submission", // 最近一次用户输入的持久化状态（含终态失败）
   "conv.create", // 新建空白会话
   "conv.submit", // 提交一条用户输入（`requestId` 幂等）
   "conv.abort", // 中断该会话的回答（durable 操作）

@@ -4,6 +4,7 @@
  */
 import type { ApprovalView, HostStatus } from "./domain.ts"
 import type { ConversationId, ViewFrame } from "./frame.ts"
+import type { InputSubmissionView } from "./submission.ts"
 
 /** 一个会话的待审批集合变化：`pending` 即为当前全量（空数组表示清空）。 */
 export type ApprovalPush = {
@@ -11,10 +12,12 @@ export type ApprovalPush = {
   readonly pending: readonly ApprovalView[]
 }
 
-// 三个通道
+// 主进程只推已提交的记录与视图。
 export type PushMap = {
   // 会话变了：新消息-流式文字-工具状态
   view: ViewFrame
+  /** 用户输入状态变化，包括 live 文档清空后仍存在的终态。 */
+  submission: InputSubmissionView
   /** 宿主健康度变化（启动、暂停、关闭、任务进出）。 */
   "host.status": HostStatus
   /** 待审批集合变化（新增请求、已答、超时）。 */

@@ -21,9 +21,12 @@ import type { PushChannel, PushMap } from "@pi/shared-types"
 import { registerIpc } from "./ipc.ts"
 /** 纯 Node 的运行时装配（存储 → Harness → 会话/帧/审批/路由）；不 import electron，因此可单测。 */
 import { DesktopRuntime } from "./runtime.ts"
+import { loadDesktopEnv } from "./config.ts"
 
 /** `file://` 协议 URL → 原生绝对路径。 */
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
+// pnpm 把 cwd 切到 apps/desktop，不能按 cwd 找根目录配置；安装包只接受显式环境配置。
+if (!app.isPackaged) loadDesktopEnv(path.resolve(app.getAppPath(), "../../.env"))
 /** 开发期由 build 脚本注入的 Vite 地址；生产构建没有它，走本地文件。 */
 const devServerUrl = process.env.PI_DEV_SERVER_URL
 
@@ -96,6 +99,13 @@ if (!gotLock) {
       minHeight: 480,
       show: false, // 等 ready-to-show，避免白屏一闪
       title: "Pi Agent Desktop",
+      backgroundColor: process.platform === "darwin" ? "#00000000" : "#ffffff",
+      ...(process.platform === "darwin" ? {
+        titleBarStyle: "hiddenInset" as const,
+        trafficLightPosition: { x: 18, y: 24 },
+        vibrancy: "sidebar" as const,
+        visualEffectState: "followWindow" as const,
+      } : {}),
       webPreferences: {
         preload: path.join(mainDir, "../preload/index.cjs"),
         contextIsolation: true, // 渲染进程与 preload 分处两个上下文，只能经 contextBridge 通信
@@ -105,6 +115,8 @@ if (!gotLock) {
       },
     })
 
+    // loadFile/loadURL 期间页面就会调用 IPC，发送方校验必须已经认识这个窗口。
+    mainWindow = created
     created.once("ready-to-show", () => created.show())
 
     created.webContents.on("did-finish-load", () => {

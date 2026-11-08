@@ -53,6 +53,9 @@ export type {
   ToolStatus,
 } from "./domain.ts"
 
+export type { InputSubmissionView } from "./submission.ts"
+export { mergeSubmissionView, submissionFailure } from "./submission.ts"
+
 export type { IpcErrorCode, IpcErrorPayload } from "./errors.ts"
 export { IpcError, toIpcErrorPayload } from "./errors.ts"
 
