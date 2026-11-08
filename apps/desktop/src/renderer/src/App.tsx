@@ -1,289 +1,290 @@
 /**
- * 最小可用的桌面页：验证 §2.1 的接线，而不是成品聊天界面。
+ * 桌面主界面：左侧会话列表，右侧当前会话。
  *
- * 它要证明四件事：
- *   1. `app.info` / `conv.list` 能拿到主进程给的数据；
- *   2. `conv.open` 的副本能叠帧（`seq` 连续，不重复、不倒退）；
- *   3. `conv.submit` 能提交，`conv.abort` 能中断；
- *   4. 审批请求能弹出来，答复能真的放行/拒绝。
+ * 这一层只做布局、选中状态和按钮回调；数据来自三个 hook：
+ *   - `useHost`         应用信息、宿主状态、会话列表
+ *   - `useConversation` 某个会话的只读副本（帧叠加 + 跳号重连）
+ *   - `useApprovals`    该会话的待审批请求
  *
- * 调试条（seq / 重连 / 丢帧）是这一阶段的验收标准，成品界面会把它收进开发者面板。
+ * 一条硬规则：**界面不预测主进程的状态**。发送后不插消息、停止后不标「已停止」、
+ * 审批答复后不本地删除——都等帧或推送回来说发生了什么。
  */
 import { useCallback, useEffect, useState } from "react"
 
-import { entryText, liveGenerationText, liveIsRunning, liveTools } from "@pi/shared-types"
-import type {
-  ApprovalView,
-  ConversationId,
-  ConversationSummary,
-  HostInfo,
-  HostStatus,
-  ViewEntry,
-} from "@pi/shared-types"
+import type { ConversationId } from "@pi/shared-types"
 
-import { invoke, subscribe } from "./ipc.ts"
+import { ApprovalBar } from "./components/ApprovalBar.tsx"
+import { Composer } from "./components/Composer.tsx"
+import { MessageList } from "./components/MessageList.tsx"
+import { compactionFailure, generationFailure, isRunning, queuedItems, toolSlots } from "./docs.ts"
+import { invoke } from "./ipc.ts"
 import { useConversation } from "./useConversation.ts"
+import { useApprovals, useHost } from "./useHost.ts"
 
 export function App() {
-  const [info, setInfo] = useState<HostInfo | undefined>()
-  const [status, setStatus] = useState<HostStatus | undefined>()
-  const [summaries, setSummaries] = useState<readonly ConversationSummary[]>([])
-  const [selected, setSelected] = useState<ConversationId | undefined>()
-  const [approvals, setApprovals] = useState<readonly ApprovalView[]>([])
-  const [draft, setDraft] = useState("")
-  const [error, setError] = useState<string | undefined>()
+  const host = useHost()
+  const [selected, setSelected] = useState<ConversationId | undefined>(undefined)
+  const [error, setError] = useState<string | undefined>(undefined)
+  const [busyAction, setBusyAction] = useState<string | undefined>(undefined)
 
   const conversation = useConversation(selected)
+  const approvals = useApprovals(selected)
 
-  /** 启动：拿应用信息，然后把起始会话设为 root。 */
+  // 起始会话由主进程给（root），界面不自己猜。
   useEffect(() => {
-    void (async () => {
-      try {
-        const [hostInfo, hostStatus] = await Promise.all([
-          invoke("app.info", {}),
-          invoke("app.status", {}),
-        ])
-        setInfo(hostInfo)
-        setStatus(hostStatus)
-        setSelected(hostInfo.rootConversationId)
-      } catch (cause) {
-        setError(text(cause))
-      }
-    })()
-  }, [])
+    if (selected === undefined && host.info !== undefined) setSelected(host.info.rootConversationId)
+  }, [host.info, selected])
 
-  /** 宿主状态推送；没收到推送时用 `app.status` 手动刷新。 */
-  useEffect(() => subscribe("host.status", setStatus), [])
+  const snapshot = conversation.snapshot
+  const running = snapshot !== undefined && isRunning(snapshot)
+  const failure = snapshot === undefined ? undefined : generationFailure(snapshot)
+  const compactionError = snapshot === undefined ? undefined : compactionFailure(snapshot)
+  const queued = snapshot === undefined ? [] : queuedItems(snapshot)
+  const tools = snapshot === undefined ? [] : toolSlots(snapshot)
 
-  /** 会话列表：切换后刷新一次，够用。 */
-  const refreshList = useCallback(async () => {
+  /** 所有动作都走同一个错误出口：失败只提示，不改界面状态。 */
+  const run = useCallback(async (label: string, action: () => Promise<void>) => {
+    setBusyAction(label)
+    setError(undefined)
     try {
-      setSummaries(await invoke("conv.list", { limit: 50 }))
+      await action()
     } catch (cause) {
-      setError(text(cause))
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusyAction(undefined)
     }
   }, [])
 
-  useEffect(() => {
-    void refreshList()
-  }, [refreshList, selected])
-
-  /** 审批：先拉当前全量，再跟推送。 */
-  useEffect(() => {
+  const send = (text: string): void => {
     if (selected === undefined) return
-    let active = true
-    void invoke("approval.list", { conversationId: selected })
-      .then((pending) => {
-        if (active) setApprovals(pending)
-      })
-      .catch(() => {})
-
-    const stop = subscribe("approval", (payload) => {
-      if (payload.conversationId === selected) setApprovals(payload.pending)
+    void run("发送", async () => {
+      await invoke("conv.submit", { conversationId: selected, text })
+      await host.refresh()
     })
-    return () => {
-      active = false
-      stop()
-    }
-  }, [selected])
-
-  const submit = async (): Promise<void> => {
-    const textValue = draft.trim()
-    if (textValue === "" || selected === undefined) return
-    setDraft("")
-    try {
-      // 调用主进程的 conv.submit 接口，提交用户输入
-      await invoke("conv.submit", { conversationId: selected, text: textValue })
-    } catch (cause) {
-      setError(text(cause))
-    }
   }
 
-  const respond = async (id: string, approved: boolean): Promise<void> => {
-    try {
-      // 调用主进程的 approval.respond 接口，批准/拒绝审批请求
-      await invoke("approval.respond", { id, approved })
-    } catch (cause) {
-      setError(text(cause))
-    }
+  const abort = (): void => {
+    if (selected === undefined) return
+    void run("停止", async () => {
+      await invoke("conv.abort", { conversationId: selected })
+    })
   }
 
-  // 判断是否正在生成
-  const running = conversation.snapshot !== undefined && liveIsRunning(conversation.snapshot)
-  // 获取生成文本
-  const liveText = conversation.snapshot === undefined ? undefined : liveGenerationText(conversation.snapshot)
-  const tools = conversation.snapshot === undefined ? [] : liveTools(conversation.snapshot)
+  const create = (): void => {
+    void run("新建", async () => {
+      const created = await invoke("conv.create", {})
+      await host.refresh()
+      setSelected(created.conversationId)
+    })
+  }
+
+  const fork = (): void => {
+    if (selected === undefined) return
+    void run("分叉", async () => {
+      const forked = await invoke("conv.fork", { conversationId: selected })
+      await host.refresh()
+      setSelected(forked.conversationId)
+    })
+  }
+
+  const compact = (): void => {
+    if (selected === undefined) return
+    void run("压缩", async () => {
+      await invoke("conv.compact", { conversationId: selected })
+      await host.refresh()
+    })
+  }
+
+  const reset = (): void => {
+    if (selected === undefined) return
+    void run("重置", async () => {
+      await invoke("conv.reset", { conversationId: selected })
+      await host.refresh()
+    })
+  }
 
   return (
-    <main className="flex min-h-full flex-col gap-4 p-6 text-sm">
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-base font-semibold text-[#e6e8ef]">Pi Agent Desktop</h1>
-        <span className="text-xs text-[#6b7280]">
-          {info === undefined
-            ? "启动中…"
-            : `${info.platform} · node ${info.node}${info.electron === undefined ? "" : ` · electron ${info.electron}`}`}
-        </span>
-        {status === undefined ? null : (
-          <span className="text-xs text-[#6b7280]">
-            调度 {status.scheduling} · 任务 {status.tasks}（跑 {status.running}，卡 {status.blocked}）· 提交{" "}
-            {status.submissions}
-          </span>
-        )}
-        {info?.model === undefined ? null : (
-          <span className="text-xs text-[#6b7280]">{info.model.modelId}</span>
-        )}
-      </header>
+    <main className="flex min-h-full flex-col gap-3 p-5 text-sm">
+      <Header
+        platform={host.info?.platform}
+        node={host.info?.node}
+        model={host.info?.model?.modelId}
+        scheduling={host.status?.scheduling}
+        modelHint={host.info?.model === undefined ? "未配置模型：请设置 ANTHROPIC_* 环境变量" : undefined}
+      />
 
       {error === undefined ? null : (
-        <div className="rounded border border-[#7f1d1d] bg-[#2a1417] px-3 py-2 text-xs text-[#fca5a5]">
+        <Banner tone="error" onDismiss={() => setError(undefined)}>
           {error}
-          <button className="ml-2 underline" onClick={() => setError(undefined)}>
-            知道了
-          </button>
-        </div>
+        </Banner>
       )}
 
-      <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+      {failure === undefined ? null : (
+        <Banner tone="warn">
+          生成失败：{failure.message}
+          {failure.retryAt === undefined ? "" : "（稍后会自动重试一次）"}
+        </Banner>
+      )}
+
+      {compactionError === undefined ? null : (
+        <Banner tone="warn">压缩失败：{compactionError}</Banner>
+      )}
+
+      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[220px_1fr]">
         <aside className="space-y-1">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs tracking-widest text-[#6b7280] uppercase">会话</h2>
+            <h2 className="text-[10px] tracking-widest text-[#6b7280] uppercase">会话</h2>
             <button
-              className="text-xs text-[#60a5fa]"
-              onClick={() => {
-                void (async () => {
-                  try {
-                    const created = await invoke("conv.create", {})
-                    setSelected(created.conversationId)
-                  } catch (cause) {
-                    setError(text(cause))
-                  }
-                })()
-              }}
+              className="text-[11px] text-[#60a5fa] disabled:opacity-40"
+              disabled={busyAction !== undefined}
+              onClick={create}
             >
               新建
             </button>
           </div>
-          {summaries.map((item) => (
+
+          {host.conversations.map((item) => (
             <button
               key={item.id}
               onClick={() => setSelected(item.id)}
-              className={`block w-full rounded px-2 py-1 text-left text-xs ${
-                item.id === selected ? "bg-[#1f2937] text-[#e6e8ef]" : "text-[#9aa2b1] hover:bg-[#171a22]"
+              className={`block w-full rounded px-2 py-1 text-left text-[11px] ${
+                item.id === selected
+                  ? "bg-[#1f2937] text-[#e6e8ef]"
+                  : "text-[#9aa2b1] hover:bg-[#171a22]"
               }`}
             >
               #{item.id}
+              {item.parent === undefined ? "" : ` ← #${item.parent.conversationId}`}
               {item.busy ? " · 忙" : ""}
               {item.queued > 0 ? ` · 排队 ${String(item.queued)}` : ""}
             </button>
           ))}
+
+          <div className="flex flex-wrap gap-1 pt-2 text-[11px]">
+            {[
+              { label: "分叉", action: fork, hint: "从最新一条消息分出新会话" },
+              { label: "压缩", action: compact, hint: "把长历史压成摘要" },
+              { label: "重置", action: reset, hint: "清空上下文，不删历史" },
+            ].map((button) => (
+              <button
+                key={button.label}
+                className="rounded border border-[#262b36] px-2 py-1 text-[#9aa2b1] disabled:opacity-40"
+                disabled={selected === undefined || busyAction !== undefined || running}
+                title={button.hint}
+                onClick={button.action}
+              >
+                {button.label}
+              </button>
+            ))}
+          </div>
         </aside>
 
-        <section className="space-y-3">
-          {/* 验收标准：seq 连续、没有丢帧、没有重连。 */}
-          <div className="rounded border border-[#262b36] bg-[#12151c] px-3 py-2 font-mono text-[11px] text-[#6b7280]">
-            conv #{conversation.convId ?? "—"} · status {conversation.status} · seq {conversation.seq} ·
-            entries {conversation.snapshot?.entries.length ?? 0} · 重连 {conversation.resyncs} · 丢弃{" "}
-            {conversation.stale}
-            <button className="ml-2 text-[#60a5fa]" onClick={conversation.resync}>
-              重连
-            </button>
-          </div>
+        <section className="flex min-h-0 flex-col gap-2">
+          <DebugBar
+            convId={conversation.convId}
+            status={conversation.status}
+            seq={conversation.seq}
+            entries={snapshot?.entries.length ?? 0}
+            docs={Object.keys(snapshot?.docs ?? {}).length}
+            resyncs={conversation.resyncs}
+            stale={conversation.stale}
+            onResync={conversation.resync}
+          />
 
-          {approvals.length === 0 ? null : (
-            <div className="space-y-2">
-              {approvals.map((request) => (
-                <div
-                  key={request.id}
-                  className="rounded border border-[#78350f] bg-[#2a1f0f] px-3 py-2 text-xs text-[#fcd34d]"
-                >
-                  <div className="font-mono">{request.summary}</div>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      className="rounded bg-[#166534] px-2 py-1 text-[#dcfce7]"
-                      onClick={() => void respond(request.id, true)}
-                    >
-                      允许
-                    </button>
-                    <button
-                      className="rounded bg-[#7f1d1d] px-2 py-1 text-[#fee2e2]"
-                      onClick={() => void respond(request.id, false)}
-                    >
-                      拒绝
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <ApprovalBar
+            pending={approvals.pending}
+            onRespond={(id, approved) => {
+              void run("审批", async () => {
+                await approvals.respond(id, approved)
+              })
+            }}
+          />
 
-          <div className="min-h-[240px] space-y-2 overflow-y-auto rounded border border-[#262b36] bg-[#171a22] p-3">
-            {conversation.status === "error" ? (
-              <p className="text-xs text-[#fca5a5]">{conversation.error}</p>
-            ) : null}
-            {(conversation.snapshot?.entries ?? []).map((entry) => (
-              <EntryRow key={entry.id} entry={entry} />
-            ))}
-            {liveText === undefined ? null : (
-              <p className="whitespace-pre-wrap text-[#c7ccd8]">{liveText}</p>
-            )}
-            {tools.map((tool) => (
-              <div key={String(tool["callId"])} className="font-mono text-[11px] text-[#6b7280]">
-                [tool] {String(tool["name"])} {String(tool["status"])}
-              </div>
-            ))}
-            {running ? <p className="text-[11px] text-[#4b5563]">生成中…</p> : null}
-          </div>
+          <MessageList snapshot={snapshot} running={running} tools={tools} queued={queued} />
 
-          <div className="flex gap-2">
-            <input
-              className="flex-1 rounded border border-[#262b36] bg-[#12151c] px-3 py-2 text-[#e6e8ef] outline-none"
-              placeholder="说点什么…"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault()
-                  void submit()
-                }
-              }}
-            />
-            <button className="rounded bg-[#1d4ed8] px-3 py-2 text-[#e0e7ff]" onClick={() => void submit()}>
-              发送
-            </button>
-            <button
-              className="rounded border border-[#262b36] px-3 py-2 text-[#9aa2b1]"
-              onClick={() => {
-                if (selected === undefined) return
-                void invoke("conv.abort", { conversationId: selected }).catch((cause: unknown) =>
-                  setError(text(cause)),
-                )
-              }}
-            >
-              停止
-            </button>
-          </div>
+          <Composer
+            disabled={selected === undefined}
+            running={running}
+            onSend={send}
+            onAbort={abort}
+          />
         </section>
       </div>
     </main>
   )
 }
 
-/** 一条条目：只按 kind 决定怎么显示，内容一律当不可信文本。 */
-function EntryRow({ entry }: { readonly entry: ViewEntry }) {
-  const mine = entry.kind === "pi.user"
-  const tool = entry.kind === "pi.tool-result"
+function Header(props: {
+  readonly platform: string | undefined
+  readonly node: string | undefined
+  readonly model: string | undefined
+  readonly scheduling: string | undefined
+  readonly modelHint: string | undefined
+}) {
   return (
-    <div className={mine ? "text-right" : ""}>
-      <div className="text-[10px] tracking-widest text-[#4b5563] uppercase">
-        {mine ? "你" : tool ? "工具结果" : entry.kind === "pi.assistant" ? "助手" : entry.kind}
-      </div>
-      <p className={`whitespace-pre-wrap ${tool ? "font-mono text-[11px] text-[#9aa2b1]" : "text-[#c7ccd8]"}`}>
-        {entryText(entry)}
-      </p>
+    <header className="flex flex-wrap items-center gap-3">
+      <h1 className="text-base font-semibold text-[#e6e8ef]">Pi Agent Desktop</h1>
+      <span className="text-[11px] text-[#6b7280]">
+        {props.platform === undefined ? "启动中…" : `${props.platform} · node ${String(props.node)}`}
+      </span>
+      {props.scheduling === undefined ? null : (
+        <span className="text-[11px] text-[#6b7280]">调度 {props.scheduling}</span>
+      )}
+      {props.model === undefined ? null : (
+        <span className="text-[11px] text-[#6b7280]">{props.model}</span>
+      )}
+      {props.modelHint === undefined ? null : (
+        <span className="text-[11px] text-[#a16207]">{props.modelHint}</span>
+      )}
+    </header>
+  )
+}
+
+function Banner(props: {
+  readonly tone: "warn" | "error"
+  readonly children: React.ReactNode
+  readonly onDismiss?: () => void
+}) {
+  const style =
+    props.tone === "error"
+      ? "border-[#7f1d1d] bg-[#2a1417] text-[#fca5a5]"
+      : "border-[#78350f] bg-[#2a1f0f] text-[#fcd34d]"
+  return (
+    <div className={`rounded border px-3 py-2 text-[11px] ${style}`}>
+      {props.children}
+      {props.onDismiss === undefined ? null : (
+        <button className="ml-2 underline" onClick={props.onDismiss}>
+          知道了
+        </button>
+      )}
     </div>
   )
 }
 
-function text(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+/** 验收用的一行：seq 是否连续、有没有重连过。成品界面应把它收进开发者面板。 */
+function DebugBar(props: {
+  readonly convId: ConversationId | undefined
+  readonly status: string
+  readonly seq: number
+  readonly entries: number
+  readonly docs: number
+  readonly resyncs: number
+  readonly stale: number
+  readonly onResync: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded border border-[#1a1f28] bg-[#0f1218] px-3 py-1 font-mono text-[10px] text-[#4b5563]">
+      <span>conv #{props.convId ?? "—"}</span>
+      <span>status {props.status}</span>
+      <span>seq {props.seq}</span>
+      <span>entries {props.entries}</span>
+      <span>docs {props.docs}</span>
+      <span className={props.resyncs === 0 && props.stale === 0 ? "" : "text-[#fbbf24]"}>
+        重连 {props.resyncs} · 丢弃 {props.stale}
+      </span>
+      <button className="ml-auto text-[#60a5fa]" onClick={props.onResync}>
+        重连
+      </button>
+    </div>
+  )
 }

@@ -6,6 +6,12 @@
 
 ### 新增
 
+- 桌面聊天界面：消息列表（回答走 Markdown，用户消息走气泡，重置/压缩显示为分隔线）、
+  工具卡（状态、输出摘要、嵌套调用）、工具结果回看（本轮结束后 `pi.live.tools` 会被清空，
+  只能从会话记录里看）、审批条、排队显示、生成中流式文本、生成/压缩失败横幅，
+  以及新建/分叉/压缩/重置入口
+- 渲染进程按职责拆开：`docs.ts`（从副本读 `pi.*` 文档，逐字段当不可信数据）、`useHost.ts`、
+  `components/{MarkdownText,ToolCard,MessageList,ApprovalBar,Composer}.tsx`；`App.tsx` 只管布局与回调
 - 桌面接线：主进程持有 `HarnessHost`（`apps/desktop/src/main/runtime.ts`），`IpcRouter` 覆盖 13 个通道，
   帧与审批走推送，`before-quit` 按「停推送 → 结算审批 → 停帧 → 关 Harness」的顺序收尾（顺序固定在 `DesktopRuntime.close()`）
 - `@pi/core` 新增两块纯 Node 逻辑：`ApprovalBroker`（等答复的 Promise + `app.approvals` 审计镜像 + 超时/取消 + 清理重启残留）
@@ -51,6 +57,7 @@
   改成先装配运行时与 handler、再开窗
 - `@pi/ext-coding` 的审批请求补 `conversationId` / `callId`：宿主靠它写对会话文档、推对窗口，
   并在取消时精确清理
+- 界面：只有工具调用、没有文本的 `pi.assistant` 条目不再渲染成空的「助手」；调试条的 docs 计数改为真实文档数
 
 - 审批等待接入 `context.abortSignal`：会话中断或关闭时立刻按拒绝返回，不再等到 120s 超时。
   之前不认信号：`Scheduler.join()` 关闭时只 `abort()` 再 `await invocation.done`，abort 只是信号，
@@ -95,6 +102,7 @@
   改成先装配运行时与 handler、再开窗
 - `@pi/ext-coding` 的审批请求补 `conversationId` / `callId`：宿主靠它写对会话文档、推对窗口，
   并在取消时精确清理
+- 界面：只有工具调用、没有文本的 `pi.assistant` 条目不再渲染成空的「助手」；调试条的 docs 计数改为真实文档数
 
 - 管道输入与 `Ctrl+D` 时 REPL 挂在未决的 `rl.question()` 上，导致进程无法退出
 - 斜杠命令拼错被当成「启动失败」而非用户输入问题

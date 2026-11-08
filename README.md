@@ -19,7 +19,7 @@
 | 契约（IPC / 推送 / 错误码 / `app.*` 文档） | ✅ 代码里，见 `packages/shared-types`、`packages/shared-docs` |
 | 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，终端内可审批 |
 | 桌面接线（Harness / IPC / 帧推送 / 审批） | ✅ 最小页可对话、可审批 |
-| 聊天界面（流式渲染、Markdown、分叉/压缩入口） | ⬜ 最小页只验证接线 |
+| 聊天界面（消息、工具卡、审批、排队、流式、Markdown、会话操作） | ✅ 可用，细节待补 |
 
 桌面应用现在能对话了：`pnpm dev` 或 `pnpm build && pnpm start`，主进程持有 `HarnessHost`，
 渲染进程通过 `window.pi.invoke` 走 IPC、靠推送拿帧。界面还是最小实现，完整界面见 ROADMAP。
