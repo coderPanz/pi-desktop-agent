@@ -32,8 +32,6 @@ import { toolError } from "./results.ts"
 // list_dir 工具
 import { createListDirTool } from "./tools/list-dir.ts"
 
-/** 扩展名：写进 `pi.agent` 的选择列表 */
-export const CODING_EXTENSION_NAME = "coding"
 
 export type CodingExtensionOptions = {
   /**
@@ -167,8 +165,8 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
 
   // 定义一个扩展
   return defineExtension({
-    name: CODING_EXTENSION_NAME, // "coding"
-    tools, // 工具注册表
+    name: "coding",
+    tools,
     hooks: [approvals], // 工具调用前置审批
   })
 }

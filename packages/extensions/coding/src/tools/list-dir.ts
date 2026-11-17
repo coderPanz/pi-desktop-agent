@@ -1,10 +1,5 @@
 /**
- * `list_dir`：列目录
- *
- * SDK 只给了 `read` / `write` / `edit` / `bash` 四个工具，没有「看目录」这一步：
- * 模型在只想知道某个目录有什么的时候，不该被迫用 `bash ls` 换个姿势拿到同样信息。
- *
- * 三条边界写死在这里：深度上限（默认 1，最多 3）、忽略 `node_modules` 与 `.git`、条数上限。
+ * `list_dir`：列出目录
  */
 import { defineTool } from "@earendil-works/pi-durable"
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env"
@@ -14,12 +9,13 @@ import { Type } from "typebox"
 import type { PathGuard } from "../guard.ts"
 import { toolError } from "../results.ts"
 
-/** 列目录时永远跳过的名字：它们的内容对「这个项目有什么」没有帮助，只会挤爆输出。 */
+// 跳过的目录
 const IGNORED_NAMES: ReadonlySet<string> = new Set(["node_modules", ".git"])
 
-/** 一次最多给这么多行：目录树是给人看的地图，不是全量导出。 */
+// 一次性列出的最大行
 const MAX_ENTRIES = 400
 
+// 生成 json-schema
 const listDirSchema = Type.Object({
   path: Type.Optional(
     Type.String({ description: "要列的目录，相对工作区根；缺省为工作区根。" }),
@@ -89,7 +85,7 @@ async function walkDirectory(
   return { ok: true, lines, truncated }
 }
 
-/** 造 `list_dir` 工具；工作区根由创建者注入，工具自己不做路径拼接。 */
+// 创建 dir_list 工具
 export function createListDirTool(options: { readonly guard: PathGuard }) {
   const { guard } = options
   return defineTool({

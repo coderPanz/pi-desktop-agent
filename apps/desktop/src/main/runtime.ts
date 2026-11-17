@@ -116,9 +116,10 @@ export class DesktopRuntime {
     // 创建注册表： 用于存储扩展
     const registry = createPiRegistry({
       extensions: [
+        // 创建 coding 扩展
         createCodingExtension({
-          workspace: paths.workspace,
-          approve: (request: ApprovalRequest, context: ApprovalContext) =>
+          workspace: paths.workspace, // 工作目录
+          approve: (request: ApprovalRequest, context: ApprovalContext) => // 审批
             approvalsRef.current?.request(request, context) ?? false,
         }),
       ],

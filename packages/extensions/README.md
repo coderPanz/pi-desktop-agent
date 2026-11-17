@@ -3,7 +3,6 @@
 Pi Agent Desktop 的**本机能力扩展集合**。扩展把工具、任务（Task）和运行前后钩子（Hook）注册到 pi-durable 的注册表；它们由 CLI 和 Electron **主进程**装配，渲染进程不直接 import 或执行扩展代码。
 
 ## 当前状态
-
 | 包 | 状态 | 职责 |
 |---|---|---|
 | [`@pi/ext-coding`](./coding/) | ✅ 已接入 | 本机文件与 shell 工具、工作区路径边界、三档审批 |
