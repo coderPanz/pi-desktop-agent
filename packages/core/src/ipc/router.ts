@@ -1,20 +1,12 @@
 /**
- * IPC 路由：按命令名调用对应的方法，返回结果或错误码
+ * IPC 路由：命令转发
  *
- * 渲染进程读不到数据库，也拿不到 Harness，它只能发一条 IPC 过来。发过来的就两样：
- * 命令名（如 `conv.submit`）和参数（如 `{ conversationId: 1, text: "hi" }`）。这个文件负责：
- *
- *   1. 检查参数：命令名认不认得、`conversationId` 是不是正整数、`text` 是不是非空字符串；
- *   2. 按命令名调用对应的方法（会话、帧、文档、审批）；
- *   3. 返回结果或错误码：`{ ok: true, value }` / `{ ok: false, error: { code, message } }`。
- *
- * 为什么返回错误码而不抛异常：异常跨进程会丢栈，还可能把本机路径带过去。
- *
- * 两条容易踩的事：
- *   - 每条命令都带 `conversationId`。桌面同时开多个会话，这里没有「当前会话」这种全局变量；
- *     `SessionManager` 里那个指针是 CLI REPL 用的，这里不用它。
- *   - 这里的「通道」指命令名，不是 Electron 的 IPC 通道名。Electron 那边只有一条 `pi:invoke`，
- *     命令名是作为参数传进来的。
+ * 渲染进程读不到数据库，也拿不到 Harness，它只能发一条 IPC 过来。
+ * 命令名（如 `conv.submit`）和参数（如 `{ conversationId: 1, text: "hi" }`）。
+ * 这个文件负责：
+ *   1. 检查参数
+ *   2. 按命令名调用对应的方法
+ *   3. 返回结果或错误码
  */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { Context } from "@earendil-works/chord"
@@ -39,15 +31,15 @@ import { inspectHarness } from "../diagnostics/inspect.ts"
 import type { FrameHub } from "../frames/frame-hub.ts"
 import type { SessionManager } from "../session/manager.ts"
 
+// 路由配置选项
 export type IpcRouterOptions = {
-  readonly harness: Harness
-  readonly manager: SessionManager
-  readonly hub: FrameHub
-  readonly approvals: ApprovalBroker
-  readonly info: HostInfo
+  readonly harness: Harness // harness 主机
+  readonly manager: SessionManager // 会话管理器
+  readonly hub: FrameHub // 会话帧管理器
+  readonly approvals: ApprovalBroker // 审批管理器
+  readonly info: HostInfo // 宿主信息
 }
 
-/** 一次 IPC 请求的应答；调用方（Electron 的 ipcMain 或测试）只需转发。 */
 export class IpcRouter {
   readonly #harness: Harness
   readonly #manager: SessionManager
@@ -63,11 +55,11 @@ export class IpcRouter {
     this.#info = options.info
   }
 
-  /** 处理一条命令。永不抛错：失败也走 `{ ok: false }`。 */
+  /** 处理渲染进程发过来的命令 */
   async handle<K extends IpcChannel>(
-    channel: K,
-    request: unknown,
-    context: Context = BACKGROUND_CONTEXT,
+    channel: K, // 命令名
+    request: unknown, // 请求参数
+    context: Context = BACKGROUND_CONTEXT, // 中断信号上下文
   ): Promise<IpcResult<K>> {
     try {
       return { ok: true, value: await this.#dispatch(channel, request, context) }
@@ -76,6 +68,7 @@ export class IpcRouter {
     }
   }
 
+  // 分发命令
   async #dispatch<K extends IpcChannel>(
     channel: K,
     request: unknown,
@@ -83,11 +76,13 @@ export class IpcRouter {
   ): Promise<IpcResponse<K>> {
     const input = asObject(request)
     switch (channel) {
+      // 获取宿主信息
       case "app.info":
         return this.#info as IpcResponse<K>
 
+      // 获取宿主状态
       case "app.status": {
-        const summary = await inspectHarness(this.#harness, context)
+        const summary = await inspectHarness(this.#harness, context) // 获取Harness摘要
         const status: HostStatus = {
           scheduling: summary.scheduling,
           tasks: summary.counts.tasks,
@@ -98,44 +93,55 @@ export class IpcRouter {
         return status as IpcResponse<K>
       }
 
+      // 获取会话列表
       case "conv.list": {
+        // 整数-范围校验
         const limit = optionalInteger(input, "limit", 1, 200) ?? 50
-        const conversations: readonly ConversationSummary[] = await this.#manager.list(context, limit)
+        const conversations: readonly ConversationSummary[] =
+          await this.#manager.list(context, limit)
         return conversations as IpcResponse<K>
       }
 
+      // 监听会话
       case "conv.open": {
         const id = conversationIdOf(input)
-        // 先确认存在：帧站对不存在的会话只报「用户错误」，界面需要区分「没有这个会话」。
         if ((await this.#harness.conversation(id, context)) === undefined) {
           throw new IpcError("NOT_FOUND", `会话不存在：${String(id)}`)
         }
+        // 监听会话：返回当前会话id-副本-起始帧号
         const opened: OpenedView = await this.#hub.open(id, context)
         return opened as IpcResponse<K>
       }
 
+      // 获取最新提交的会话
       case "conv.submission": {
         const id = conversationIdOf(input)
         await this.#conversation(id, context)
-        return (await this.#manager.latestSubmission(id, context)) as IpcResponse<K>
+        return (await this.#manager.latestSubmission(
+          id,
+          context,
+        )) as IpcResponse<K>
       }
 
+      // 创建会话
       case "conv.create": {
         const conversation = await this.#manager.create(context)
         return { conversationId: conversation.id } as IpcResponse<K>
       }
 
+      // 提交用户输入
       case "conv.submit": {
         const id = conversationIdOf(input)
         const text = requiredText(input, "text")
-        const whenBusy = optionalWhenBusy(input)
-        const requestId = optionalText(input, "requestId")
-        const conversation = await this.#conversation(id, context)
+        const whenBusy = optionalWhenBusy(input) // 忙时等待策略
+        const requestId = optionalText(input, "requestId") // 请求 id
+        const conversation = await this.#conversation(id, context) // 获取会话实例
         const submission = await conversation.submit(
+          // 提交用户输入
           {
             type: "input",
             content: text,
-            whenBusy: whenBusy ?? "followUp",
+            whenBusy: whenBusy ?? "followUp", // 忙时等待策略
             ...(requestId === undefined ? {} : { requestId }),
           },
           context,
@@ -143,40 +149,82 @@ export class IpcRouter {
         return { submissionId: submission.id } as IpcResponse<K>
       }
 
+      // 中断会话
       case "conv.abort": {
-        const conversation = await this.#conversation(conversationIdOf(input), context)
+        const conversation = await this.#conversation(
+          conversationIdOf(input),
+          context,
+        )
         await conversation.abort(context)
         return {} as IpcResponse<K>
       }
 
+      // 分叉会话
       case "conv.fork": {
         const id = conversationIdOf(input)
         const at = optionalInteger(input, "at", 1) as EntryId | undefined
         const conversation = await this.#conversation(id, context)
-        const entryId = at ?? (await this.#lastEntryId(conversation, context))
-        const forked = await conversation.fork(entryId, { ownership: { kind: "ownerless" } }, context)
-        return { conversationId: forked.id } as IpcResponse<K>
+        const entryId = at ?? (await this.#lastEntryId(conversation, context)) // 获取最新的条目 id ，也就是分叉的起点
+        const forked = await conversation.fork(
+          entryId,
+          { ownership: { kind: "ownerless" } },
+          context,
+        ) // 开始分叉
+        return { conversationId: forked.id } as IpcResponse<K> // 返回分叉会话 id
       }
 
+      // 重置会话
       case "conv.reset": {
         const id = conversationIdOf(input)
-        const handoff = optionalText(input, "handoff")
+        /**
+         * handoff：重置时给新上下文的「交接说明」
+         * pi-durable 的思想，例如 fork/reset 都是基于在条目 到 pi.reset ; pi.xxx, 系统会基于断点进行相应处理。
+         * 例如 reset 时。 会在该条会话对应的条目 entry 写入 pi.reset，在 pi.reset 之前的内容就不进模型上下文，不发给模型。
+         * 就相当于 reset 的效果。
+         */
+
+        /**
+         * SDK 里的实现（harness.js:46-52）：
+        ```js
+          async reset(handoff, context) {
+            const model = handoff === undefined
+              ? {}
+              : { model: [{ role: "user", content: handoff, timestamp: now() }] }
+            const entry = { kind: ResetEntry.kind, head: "self", ...model }   // kind = "pi.reset"
+            await this.#host.submissions.submit(this.id, { type: "write", entry }, context) // write 类型，不触发模型调用
+          }
+        ``` 
+        - head: "self" → 从这里开始算新上下文
+        - handoff不为空 → 则这条新条目的起点带一个 [UserMessage]，用户消息作为新上下文的起点。
+        例如 /reset "刚才在重构 a.ts，已完成一半" 
+        新条目起点：
+       【user】：刚才在重构 a.ts，已完成一半
+        这就是它的用处：清空上下文但别丢掉「我们刚做到哪」这件事，省得用户重新解释一遍背景
+        */
+        const handoff = optionalText(input, "handoff") // 重置时给新上下文的「交接说明」
         const conversation = await this.#conversation(id, context)
-        await conversation.reset(handoff, context)
+        await conversation.reset(handoff, context) //
         return {} as IpcResponse<K>
       }
 
       case "conv.compact": {
         const id = conversationIdOf(input)
+        // 拿到指令 text
         const instructions = optionalText(input, "instructions")
         const conversation = await this.#conversation(id, context)
+        // 传入指令【压缩指令】和中断信号的上下文
         const taskId = await conversation.compact(instructions, context)
+        // 等待压缩任务完成
         const settled = await this.#harness.waitForTask(taskId, context)
-        const outcome = settled.state.outcome
-        const entryId = outcome.status === "completed" ? outcome.result.entryId : undefined
+        // 获取压缩任务结果
+        const outcome = settled.state.outcome // 任务结果
+        // 如果任务完成，则返回新条目 id， 新的上下文从该条目开始
+        const entryId =
+          outcome.status === "completed" ? outcome.result.entryId : undefined
         return { entryId } as IpcResponse<K>
       }
 
+      // 获取文档
       case "doc.get": {
         const id = conversationIdOf(input)
         const kind = requiredText(input, "kind")
@@ -184,15 +232,20 @@ export class IpcRouter {
         return value as IpcResponse<K>
       }
 
+      // 获取该会话的：待批请求
       case "approval.list": {
         const id = conversationIdOf(input)
         return (await this.#approvals.list(id)) as IpcResponse<K>
       }
 
+      // 审批决定：是否放行工具等调用请求
       case "approval.respond": {
         const id = requiredText(input, "id")
         const approved = requiredBoolean(input, "approved")
-        return { decision: this.#approvals.respond(id, approved) } as IpcResponse<K>
+        return {
+          // 执行审批
+          decision: this.#approvals.respond(id, approved),
+        } as IpcResponse<K>
       }
 
       default: {
@@ -210,7 +263,7 @@ export class IpcRouter {
     return conversation
   }
 
-  /** 分叉点缺省取最新可见条目。 */
+  /** 获取该会话最新的条目 id，作为 fork 的起点 */
   async #lastEntryId(conversation: Conversation, context: Context): Promise<EntryId> {
     const page = await conversation.entries({ order: "descending" }, 1, undefined, context)
     const entry = page.items[0]
@@ -219,7 +272,11 @@ export class IpcRouter {
   }
 }
 
-/** 已知的 `app.*` 文档：kind → 读法（会话作用域要带 id，session 作用域不带）。 */
+/** 
+ * 读文档
+ * harness.snapshot： 是 读一份「已提交的文档」的当前值
+ *  读的是「已提交」状态，不是内存里的中间态所以 api 命名为“快照”
+ */
 async function readDoc(
   harness: Harness,
   kind: string,
@@ -227,22 +284,38 @@ async function readDoc(
   context: Context,
 ): Promise<JsonObject | undefined> {
   switch (kind) {
+    /**
+     * AppSettingsDoc = defineDoc({
+        kind: "app.settings",
+        version: 1,
+        scope: "session",
+        initial: (): AppSettings => ({ ...DEFAULT_SETTINGS }),
+        // 小文档：攒够一批增量再落一次整帧，避免每次改主题都写一份完整 base。
+        checkpointWhen: (_value, _ops, info) => info.deltasSinceBase >= 64,
+      })
+     */
     case "app.settings":
-      return (await harness.snapshot(AppSettingsDoc, context)) as JsonObject | undefined
+      return (await harness.snapshot(AppSettingsDoc, context)) as
+        | JsonObject
+        | undefined
     case "app.workspace":
-      return (await harness.snapshot(AppWorkspaceDoc, conversationId, context)) as
-        | JsonObject
-        | undefined
+      return (await harness.snapshot(
+        AppWorkspaceDoc,
+        conversationId,
+        context,
+      )) as JsonObject | undefined
     case "app.approvals":
-      return (await harness.snapshot(AppApprovalsDoc, conversationId, context)) as
-        | JsonObject
-        | undefined
+      return (await harness.snapshot(
+        AppApprovalsDoc,
+        conversationId,
+        context,
+      )) as JsonObject | undefined
     default:
       throw new IpcError("INVALID_ARGUMENT", `未知文档 kind：${kind}`)
   }
 }
 
-/** 入参一律当不可信：先确认是普通对象。 */
+/** 入参校验 */
 function asObject(value: unknown): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new IpcError("INVALID_ARGUMENT", "请求体必须是对象。")
@@ -286,13 +359,14 @@ function optionalInteger(
   return value
 }
 
-/** 会话 id：线上是普通数字，进 core 才收窄成品牌类型。 */
+/** 获取会话 id */
 function conversationIdOf(input: Readonly<Record<string, unknown>>): ConversationId {
   const value = optionalInteger(input, "conversationId", 1)
   if (value === undefined) throw new IpcError("INVALID_ARGUMENT", "缺少 conversationId。")
   return value as ConversationId
 }
 
+// 忙时策略
 const WHEN_BUSY: ReadonlySet<WhenBusy> = new Set(["steer", "followUp", "reject"])
 
 function optionalWhenBusy(input: Readonly<Record<string, unknown>>): WhenBusy | undefined {

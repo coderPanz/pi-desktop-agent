@@ -1,15 +1,22 @@
 /**
- * 把某个会话的主进程副本搬成 React 状态，：`conv.open` 起手，之后逐帧叠加，跳号就 resync 重建。
+ * 把某个会话的主进程副本搬成 React 状态，：`conv.open` 起始，之后逐帧叠加，跳号就 resync 重建
  *
  * 帧的判定顺序：`convId` 不符丢弃 → `seq <= 当前` 丢弃（重复/旧帧）→ `seq` 跳号则重连 →
  * `isBase(ops)` 整帧重建，否则增量应用。
+ * 跳号：帧序号不连续， 主进程 FrameHub 为每个会话维护一个单调递增的计数器（packages/core/src/frames/frame-hub.ts）所以渲染层手里是两条信息：「副本长这样」+「它是第几号」。之后每来一帧，编号应该恰好是上一号 + 1 —— 因为主进程是严格按顺序 +1 发出去的
+ * 为什么会丢帧：
+ * 1. open 与 subscribe 之间的时间窗：主进程在 open() 里 materializeView(watch.value) 取快照、响应 IPC；这个往  
+    返期间会话可能又变了，那些帧已经 #publish 出去了，但渲染进程的 "view" 监听还没挂上 → 丢。
+ 2. 推送通道不可靠：addSink(frame => options.publish("view", frame)) → webContents.send。窗口在后台被节流、渲 
+    染进程忙、send 失败，都可能丢。
+ 3. 重连竞态：resync 期间的旧响应与新帧交错。
  */
 import { useCallback, useEffect, useRef, useState } from "react"
-
+// 「把一批 op 应用到旧值上，返回新值，绝不改旧值」**函数-它是 useConversation 里唯一改动 snapshot 的手段
 import { applyImmutable, isBase } from "@pi/shared-types"
 import type { ConversationId, OpenedView, ViewSnapshot } from "@pi/shared-types"
 
-import { invoke, subscribe } from "./ipc.ts"
+import { invoke, subscribe } from "../ipc.ts"
 
 export type ConversationState = {
   readonly status: "idle" | "loading" | "ready" | "error"
@@ -24,10 +31,10 @@ export type ConversationState = {
 }
 
 const EMPTY: ConversationState = {
-  status: "idle",
-  convId: undefined,
-  seq: -1,
-  snapshot: undefined,
+  status: "idle", // 会话忙碌状态
+  convId: undefined, // 会话 id
+  seq: -1, // 会话帧序号
+  snapshot: undefined, // 会话快照
   resyncs: 0,
   stale: 0,
   error: undefined,
@@ -53,21 +60,20 @@ export function useConversation(conversationId: ConversationId | undefined): Con
    * }
    */
   const [state, setState] = useState<ConversationState>(EMPTY)
-  /**
-   * 会话轮次号：`conversationId` 每变一次就 +1（含首次挂载），`open()` 与帧回调都带着出发时的号，
-   * 号对不上就说明是上一轮会话的迟到结果，丢弃。
-   * resync 不 +1：它要的正是同一轮的最新副本。
-   */
+  // 会话轮次号
   const generation = useRef(0)
-  /** 同一时刻只允许一次重连：跳号触发的那次 conv.open 没回来之前，不再发第二次 */
+  /** 是否正在重连的：同一时刻只允许一次重连 */
   const resyncing = useRef(false)
 
   // 当前会话 id
   const currentId = useRef<ConversationId | undefined>(undefined)
 
-  // open 是「拉一次完整副本并（如果轮次没变）用它整体替换本地状态」——首次挂载和 resync 都用它，区别只在 resync 标志是否给 resyncs 计数
+  /** 
+   * open 是「拉一次完整副本并（如果轮次没变）用它整体替换本地状态」
+   * open 被放进了 useEffect 的依赖数组，而依赖是按引用比较的——不包裹就会变成每次渲染都重订阅、无限循环调    
+ conv.open
+   */
   const open = useCallback(
-    // gen 是 generation 的缩写，含义是「这一轮 effect 出发时的轮次号」
     async (id: ConversationId, gen: number, resync: boolean) => {
       /**
        * 调用主进程的 conv.open 接口，获取会话的起点
@@ -96,10 +102,6 @@ export function useConversation(conversationId: ConversationId | undefined): Con
 
   /**
    * 跳号后的重连：重新 `conv.open`，用新副本整体顶掉本地状态
-   *
-   * - 同一时刻只允许一次（`resyncing`）：并发重开会让响应乱序，`seq` 可能被改回去，进而反复跳号；
-   * - 轮次号沿用 `generation.current`（不 +1）：这次结果就该生效；
-   * - 失败只记 `error`，旧副本仍能看，不白屏。
    */
   const resyncNow = useCallback(() => {
     const id = currentId.current

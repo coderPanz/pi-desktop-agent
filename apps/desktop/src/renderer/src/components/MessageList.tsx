@@ -19,6 +19,7 @@ export type MessageListProps = {
   readonly queued: readonly QueuedItem[]
 }
 
+// 已提交历史 + 实时生成 + 实时工具状态 + 排队输入统一组织成对话区 UI 的组件
 export function MessageList({ snapshot, running, tools, queued }: MessageListProps) {
   const bottom = useRef<HTMLDivElement | null>(null)
   const entries = snapshot === undefined ? [] : visibleEntries(snapshot.entries)

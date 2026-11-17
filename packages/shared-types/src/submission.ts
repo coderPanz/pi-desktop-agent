@@ -26,7 +26,7 @@ export function mergeSubmissionView(
   return incoming
 }
 
-/** 重置后的旧错误不再属于当前上下文；用户主动停止不是生成失败。 */
+/** 在多个可能乱序到达的提交状态中，选出当前界面应该保留并展示的那一条状态 */
 export function submissionFailure(
   submission: InputSubmissionView | undefined,
   snapshot: ViewSnapshot | undefined,

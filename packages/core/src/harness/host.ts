@@ -22,22 +22,22 @@ export type HarnessHostOptions = OpenHarnessOptions & {
 
 export class HarnessHost {
   readonly harness: Harness // readonly： 外部可读，不可修改
+  // 会话对象，会话 id 和操作会话的方法：`configure`（修改会话配置，如模型、工具等）、`submit`（提交用户输入）、`reset`（重置上下文）、`compact`（压缩上下文）、`commit`（提交会话）、`context`（获取会话上下文）
   readonly root: Conversation
+  // 存储对下，包括存储 id 以及操作存储的方法
   readonly storage: Storage
+  // 关闭 Harness 主机，是一个异步动作，返回值为 promsie
   readonly closed: Promise<SessionEnd>
 
-  /**
-   * 关闭状态机：`undefined` = 还没人关过；一旦赋值就是“那一次关闭”的 promise。
-   * 用 `#` 而非 `readonly`：外部不该读到也不该改写它，否则幂等假不了。
-   */
+  // 用 `#` 而非 `readonly`：外部不该读到也不该改写它。
   #closing: Promise<void> | undefined
 
   private constructor(
-    input: HarnessHostOptions,
+    input: HarnessHostOptions, // HarnessHost 配置
     opened: {
-      harness: Harness
-      root: Conversation
-      closed: Promise<SessionEnd>
+      harness: Harness // Harness 实例
+      root: Conversation // 会话对象
+      closed: Promise<SessionEnd> // 关闭 Harness
     },
   ) {
     this.storage = input.storage
@@ -46,70 +46,27 @@ export class HarnessHost {
     this.closed = opened.closed
   }
 
+  // 创建 harness 主机
   static async open(
     input: HarnessHostOptions,
     context: Context = BACKGROUND_CONTEXT,
   ): Promise<HarnessHost> {
+    // opened：{ harness, root, closed }
     const opened = await openHarness(input.storage, input, context)
     return new HarnessHost(input, opened)
   }
 
-  /**
-   * 幂等关闭：**多次调用 = 调用一次**。关闭开始后，`finally`、`SIGINT`、重复的 `close()` 拿到的都是
-   * **同一个 promise**（引用相等，可以放心多处 `await`）
-   *
-   * `this.#closing ??= …` 是「逻辑空值赋值」，等价于：
-   *
-   * ```ts
-   * if (this.#closing === undefined || this.#closing === null) {
-   *   this.#closing = this.harness.close(context)
-   * }
-   * return this.#closing
-   * ```
-   */
   close(context: Context = BACKGROUND_CONTEXT): Promise<void> {
     this.#closing ??= this.harness.close(context)
     return this.#closing
   }
 
   /**
-   * 一次性快照：问一句“现在系统到底什么状态、有没有卡住”，拿一份普通 JSON 就走。
+   * 检查当前 Harness 的状态
    * 返回三样东西：
-   *
    * - `scheduling`：`running` / `paused` / `closing`——调度器当前是否在推进。
-   * - `tasks`：每个**未完成**任务一条
-   *
-   * 真实输出（提交一句“hi”、任务刚建立时）：
-   *
-   * ```jsonc
-   * {
-   *   "scheduling": "running",
-   *   "tasks": [{
-   *     "record": {
-   *       "id": 9, "conversationId": 1, "kind": "pi.generation", "version": 1,
-   *       "input": {}, "background": false, "abortRequested": false,
-   *       "state": { "status": "pending", "checkpoint": { "phase": "prepare", "attempt": 1 } },
-   *     },
-   *     "state": { "kind": "ready", "migrates": false }, // 调度视角：排队中，下一轮就跑
-   *   }],
-   *   "submissions": [
-   *     { "id": 8, "conversationId": 1, "type": "input", "status": "placed", "entry": 7 },
-   *   ]
-   * }
-   * ```
-   *
-   * 和 `taskGraph()` 的区别：
-   *
-   * | | `inspect()` | `taskGraph()` |
-   * |---|---|---|
-   * | 形态 | 一次性快照，不能订阅 | 活视图，可 `.subscribe()` |
-   * | 适用 | 启动自检、卡住排障、健康检查 | 实时任务面板 |
-   * | 独有 | 调度判断 `state.kind`、排队中的 `submissions`、`restarts` | 能持续跟变化；用完必须 `.dispose()` |
-   *
-   * 注意：`record` 里带 `input` 与 `checkpoint`，**可能有内容**（如工具参数），要给人看或写日志请先挑字段——
-   * 本项目就是这么做的：`diagnostics/inspect.ts` 的 `inspectHarness()` 把它投影成脱敏摘要（不带 input、参数、模型消息）。
-   *
-   * 只读：不写库、不跑任务代码、不改任何状态。
+   * - `tasks`：正在进行的任务列表
+   * - `submissions`：所有提交的任务列表
    */
   inspect(context: Context = BACKGROUND_CONTEXT): Promise<HarnessInspection> {
     return this.harness.inspect(context)
@@ -117,25 +74,10 @@ export class HarnessHost {
 
   /**
    * 查当前有哪些任务活着：返回一张任务表的活视图，表变了可以订阅
-   *
-   * 这里的“任务”指会暂停/恢复/有中间状态的活，本项目里只有三种：`pi.generation`（一轮请求模型并收回答）、
-   * `pi.tool`（一次工具调用）、`pi.compaction`（压缩历史）。它们的生命周期存在库里，所以进程崩了能接着干。
-   *
-   * 表长这样（真实输出）：
-   *
-   * ```jsonc
-   * { "tasks": {
-   *   "9": {
-   *     "id": 9,
-   *     "kind": "pi.generation",    // 什么活
-   *     "conversationId": 1,         // 属于哪个对话
-   *     "background": false,         // 后台活，不挡用户
-   *     "abortRequested": false,     // 用户点了停止
-   *     "state": { "status": "pending", "phase": "prepare" },
-   *     "conversations": [],         // 它自己开的子对话
-   *   },
-   * } }
-   * ```
+   * 活着的定义：state.status !== terminal
+   * pending    │ 可被调度，还没被领走                                 │ ✅   │
+    ├────────────┼──────────────────────────────────────────────────┼ ✅   ┤等
+    │ running    │ 已被一个任务调用占住，正在跑
    */
   taskGraph(
     context: Context = BACKGROUND_CONTEXT,

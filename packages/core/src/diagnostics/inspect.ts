@@ -53,9 +53,7 @@ export type InspectionSummary = {
 }
 
 /**
- * 取一份诊断摘要。
- *
- * 只读：不写库、不跑任务代码。看到 `counts.blocked > 0` 或 `tasks[].blockedReason` 就是有活卡住了。
+ * 获取 harness 的诊断摘要
  */
 export async function inspectHarness(
   harness: Harness,

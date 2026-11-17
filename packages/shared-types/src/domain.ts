@@ -4,7 +4,7 @@
 
 import type { ConversationId, EntryId, TaskId } from "./frame.ts"
 
-/** 会话列表里的一条。 */
+/** 会话列表里的一条记录 */
 export type ConversationSummary = {
   readonly id: ConversationId
   /** 从哪个会话的哪条消息分叉出来的；根会话没有。 */
@@ -48,15 +48,15 @@ export type ApprovalDecision = "approved" | "denied" | "expired"
  * 渲染进程不能 import；所以线上单独声明一份（改名即契约）。
  */
 export type ApprovalView = {
-  /** 审批请求 id；同一次工具调用可能先后产生多条。 */
+  /** 审批请求 id */
   readonly id: string
-  readonly conversationId: ConversationId
-  /** 工具调用 id（`ToolCall.id`），与 `pi.live.tools[].callId` 对得上。 */
+  readonly conversationId: ConversationId // 会话 id
+  /** 工具调用 id（`ToolCall.id`），与 `pi.live.tools[].callId` 对应  */
   readonly callId: string
-  readonly tool: string
-  /** 给人看的一句话，例如 `bash: rm -rf build`。 */
+  readonly tool: string // 工具名称
+  /** 审批描述-给人看 */
   readonly summary: string
-  readonly createdAt: number
+  readonly createdAt: number // 审批请求创建时间
 }
 
 /** 整体运行状况，给启动自检和状态栏用；不含任何消息内容。 */

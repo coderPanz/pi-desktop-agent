@@ -86,16 +86,14 @@ export async function openHarness(
   )
   const model = options.agent?.model
   if (model != null) {
-    // root() 不会重配既有会话；修复早期未配置启动留下的空模型，保留其他字段与历史。
     await harness.commit(async (tx) => {
       const agent = await tx.doc(AgentDoc, root.id)
       if (agent.model === undefined) agent.model = { ...model }
     }, context)
   }
+  
   log("root conversation ready", { conversationId: root.id })
-
   harness.resume()
   log("harness resumed")
-
   return { harness, root, closed: harness.closed }
 }

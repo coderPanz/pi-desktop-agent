@@ -168,8 +168,8 @@ async function runDev(): Promise<void> {
     ...preloadOptions,
     plugins: [restartPlugin()],
   })
-  await mainCtx.watch()
-  await preloadCtx.watch()
+  await mainCtx.watch() // 启动主进程的 watch
+  await preloadCtx.watch() // 启动 preload 层的 watch
 
   // 统一收尾：释放两个 watch 上下文和 dev server，再杀掉 Electron，最后退出
   const shutdown = async () => {

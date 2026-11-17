@@ -1,19 +1,5 @@
 /**
- * 审批中枢：把扩展里的「询问审批环节」落到宿主身上
- *
- * 一次审批的生命周期：
- *
- * ```
- * 工具要执行 → 扩展的 beforeTool 调 approver（本中枢）
- *   ① 生成 id，写进 app.approvals.pending，通知界面（push）
- *   ② 创建一个等着答复的 Promise，等界面答复 / 超时 / 会话被取消
- *   ③ 无论哪种结局，都把 pending 摘掉、写 latest，再通知界面
- * ```
- *
- * 为什么真正决定放行的是内存里那个 Promise，文档只是镜像：
- * `HookApi` 只能 `snapshot`（不能 `watch`），所以钩子无法「等文档变化」；
- * 而答复必须立刻解除阻塞，所以真正放行的开关只能是同进程里的一个 Promise。
- * 文档留给审计，以及重启后清理残留（`list()` 会顺手清，见 `#reconcile`）。
+ * 审批中枢：工具调用「询问审批环节」落到宿主身上
  */
 import type { Context } from "@earendil-works/chord"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
@@ -22,54 +8,60 @@ import { AppApprovalsDoc } from "@pi/shared-docs"
 import type { AppApprovals } from "@pi/shared-docs"
 import type { ApprovalDecision, ApprovalView, ConversationId } from "@pi/shared-types"
 
-/**
- * 一条审批请求（与 `@pi/ext-coding` 的 `ApprovalRequest` 结构一致）
- */
+// 审批输入
 export type ApprovalInput = {
-  readonly tool: string
-  readonly summary: string
-  readonly conversationId: number
-  readonly callId: string
+  readonly tool: string // 工具名称
+  readonly summary: string // 审批描述
+  readonly conversationId: number // 会话 id
+  readonly callId: string // 调用 id
 }
 
-/** 答复通道拿到的环境信息：会话关闭/中断时宿主据此收掉挂起的请求。 */
+/** 中断信号，挂起该审批请求 */
 export type ApprovalContextInput = {
   readonly signal: AbortSignal | undefined
 }
 
-/** 默认审批超时；与扩展里那次超时同值，谁先到都按拒绝处理。 */
+/** 审批超时时间 */
 export const DEFAULT_APPROVAL_TIMEOUT_MS = 120_000
 
 export type ApprovalBrokerOptions = {
   readonly harness: Harness
-  /** 待审批集合变化时回调（宿主用来推送）。 */
-  readonly onChange: (conversationId: ConversationId, pending: readonly ApprovalView[]) => void
-  readonly timeoutMs?: number
-  readonly now?: () => number
-  /** 生成审批 id；测试可注入确定值。 */
-  readonly nextId?: () => string
+  /** 待批集合一变就回调宿主，让宿主把「现在还有哪些审批在等人」推给界面 */
+  readonly onChange: (
+    conversationId: ConversationId,
+    pending: readonly ApprovalView[],
+  ) => void
+  readonly timeoutMs?: number // 审批超时时间
+  readonly now?: () => number // 当前时间
+  readonly nextId?: () => string // 生成审批 id
 }
 
+// 审批闸门
 type Gate = {
-  readonly view: ApprovalView
-  readonly settle: (decision: ApprovalDecision) => void
+  readonly view: ApprovalView // UI 展示
+  readonly settle: (decision: ApprovalDecision) => void // 是否放行
 }
 
+// 审批类
 export class ApprovalBroker {
   readonly #harness: Harness
-  readonly #onChange: (conversationId: ConversationId, pending: readonly ApprovalView[]) => void
+  // 待批集合一变就回调宿主，让宿主把「现在还有哪些待审批的请求」推给界面
+  readonly #onChange: (
+    conversationId: ConversationId,
+    pending: readonly ApprovalView[],
+  ) => void
   readonly #timeoutMs: number
   readonly #now: () => number
   readonly #nextId: () => string
-  /** 待批请求：id → 结算函数。这是「谁能放行」的唯一依据。 */
+  /** 审批放行通道 */
   readonly #gates = new Map<string, Gate>()
-  /** 会话 id → 该会话待批请求的 id，按产生顺序。 */
+  /** 会话 id → 该会话中待批请求的 id 的映射， */
   readonly #byConversation = new Map<number, string[]>()
-  #counter = 0
+  #counter = 0 // 审批 id 生成器
 
   constructor(options: ApprovalBrokerOptions) {
     this.#harness = options.harness
-    this.#onChange = options.onChange
+    this.#onChange = options.onChange // 待批集合一变就回调宿主，让宿主把「现在还有哪些待审批的请求」推给界面
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS
     this.#now = options.now ?? (() => Date.now())
     this.#nextId =
@@ -80,48 +72,62 @@ export class ApprovalBroker {
       })
   }
 
-  /** 扩展的答复通道：返回 `true` 才执行。 */
-  async request(input: ApprovalInput, context: ApprovalContextInput): Promise<boolean> {
-    const id = this.#nextId()
+  /** 审批请求，返回 true 才执行 */
+  async request(
+    input: ApprovalInput,
+    context: ApprovalContextInput, // 中断信号
+  ): Promise<boolean> {
+    const id = this.#nextId() // 生成审批 id
     const view: ApprovalView = {
-      id,
-      conversationId: input.conversationId,
-      callId: input.callId,
-      tool: input.tool,
-      summary: input.summary,
-      createdAt: this.#now(),
+      id, // 审批 id
+      conversationId: input.conversationId, // 会话 id
+      callId: input.callId, // 调用 id
+      tool: input.tool, // 工具名称
+      summary: input.summary, // 审批描述
+      createdAt: this.#now(), // 审批请求创建时间
     }
 
-    const decision = await new Promise<ApprovalDecision>((resolve) => {
-      let settled = false
+    // 等待异步任务：审批请求
+    const decision = await new Promise<ApprovalDecision>(resolve => {
+      let settled = false // 是否已经判定
       const settle = (value: ApprovalDecision): void => {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        context.signal?.removeEventListener("abort", onAbort)
+        context.signal?.removeEventListener("abort", onAbort) //
         resolve(value)
       }
 
-      const timer = setTimeout(() => settle("expired"), this.#timeoutMs)
-      const onAbort = (): void => settle("denied")
-      if (context.signal?.aborted === true) settle("denied")
-      else context.signal?.addEventListener("abort", onAbort, { once: true })
+      const timer = setTimeout(() => settle("expired"), this.#timeoutMs) // 超时判定
+      const onAbort = (): void => settle("denied") // 拒绝判定
+      if (context.signal?.aborted === true)
+        settle("denied") // 中断信号判定
+      else context.signal?.addEventListener("abort", onAbort, { once: true }) // 监听中断信号
 
+      /**
+       * 闭包场景：函数内部变量保存引用，外部执行。
+       * 记录审批 id 和 审批视图-审批决定
+       * 在 respond 拿到 gate.settle 并执行 settle 最后调用 resolve ，该 decision 函数结束
+       */
       this.#gates.set(id, { view, settle })
+      // 获取该会话正在等待的审批 id 列表，没有就创建一个空数组
       this.#idsOf(view.conversationId).push(id)
-      // 先登记再通知：界面收到推送后立刻点按钮也不会扑空。
+      // 通知界面并拿到 审批视图和审批决定
       this.#publish(view.conversationId)
+      // 写入待批请求
       void this.#writePending(view.conversationId)
     })
 
+    // 审批结束，将审批记录从内存中移除，不影响持久化
     this.#forget(id, input.conversationId)
+    // 持久化审批决定
     await this.#writeDecision(input.conversationId, id, decision)
+    // 审批是否通过
     return decision === "approved"
   }
 
   /**
-   * 该会话的待批请求。
-   *
+   * 该会话的待批请求
    * 顺手清理残留：重启后文档里可能留着上次进程崩溃时的 pending，
    * 那些已经没人在等答复，永远不可能被执行——在这里清掉，免得界面显示重启前残留、点不动的审批。
    */
@@ -131,23 +137,28 @@ export class ApprovalBroker {
     return live
   }
 
-  /** 回答一条请求。已结束的请求返回它的终态（幂等），不报错。 */
+  /** 闭包：审批决定，用户通过 approved 传入是否通过 */
   respond(id: string, approved: boolean): ApprovalDecision {
     const gate = this.#gates.get(id)
-    if (gate === undefined) return "expired"
+    if (gate === undefined) return "expired" // 审批失效
+    // 开始执行审批
     gate.settle(approved ? "approved" : "denied")
     return approved ? "approved" : "denied"
   }
 
-  /** 关闭时把所有挂起的请求结算掉，避免留下没人等的 Promise。 */
+  /** 关闭时把所有挂起的请求结算掉，避免留下没人等的 Promise */
   closeAll(): void {
     for (const [id, gate] of [...this.#gates]) {
+      // 清理审批闸门
       gate.settle("expired")
+      // 清理审批记录
       this.#forget(id, gate.view.conversationId)
     }
   }
 
+  // 获取该会话正在等待的审批 id 列表，没有就创建一个空数组
   #idsOf(conversationId: number): string[] {
+    // 拿该会话正在等待的审批 id 列表
     const existing = this.#byConversation.get(conversationId)
     if (existing !== undefined) return existing
     const created: string[] = []
@@ -155,14 +166,18 @@ export class ApprovalBroker {
     return created
   }
 
+  // 获取审批视图和审批决定
   #views(conversationId: number): readonly ApprovalView[] {
+    // 拿该会话正在等待的审批 id 列表
     const ids = this.#byConversation.get(conversationId) ?? []
-    return ids.flatMap((id) => {
+    // 根据 审批 id 获取 审批视图 和 审批决定
+    return ids.flatMap(id => {
       const gate = this.#gates.get(id)
       return gate === undefined ? [] : [gate.view]
     })
   }
 
+  // 审批结束后，将审批记录从内存中移除，不影响持久化
   #forget(id: string, conversationId: number): void {
     this.#gates.delete(id)
     const ids = this.#byConversation.get(conversationId)
@@ -170,17 +185,23 @@ export class ApprovalBroker {
     const index = ids.indexOf(id)
     if (index !== -1) ids.splice(index, 1)
     if (ids.length === 0) this.#byConversation.delete(conversationId)
+    // 通知界面
     this.#publish(conversationId)
   }
 
+  // 通知界面
   #publish(conversationId: number): void {
-    this.#onChange(conversationId as ConversationId, this.#views(conversationId))
+    this.#onChange(
+      conversationId as ConversationId,
+      // 获取当前会话的审批视图和审批决定
+      this.#views(conversationId),
+    )
   }
 
-  /** 文档写入失败不该影响审批本身：审计掉了就掉了，阻塞还得解开。 */
+  /** 持久化审批请求 */
   async #writePending(conversationId: number): Promise<void> {
-    await this.#commit(conversationId, (doc) => {
-      doc.pending = this.#views(conversationId).map((view) => ({
+    await this.#commit(conversationId, doc => {
+      doc.pending = this.#views(conversationId).map(view => ({
         id: view.id,
         callId: view.callId,
         tool: view.tool,
@@ -190,14 +211,15 @@ export class ApprovalBroker {
     })
   }
 
+  // 持久化审批决定
   async #writeDecision(
     conversationId: number,
     id: string,
     decision: ApprovalDecision,
   ): Promise<void> {
-    await this.#commit(conversationId, (doc) => {
+    await this.#commit(conversationId, doc => {
       const remaining = this.#views(conversationId)
-      doc.pending = remaining.map((view) => ({
+      doc.pending = remaining.map(view => ({
         id: view.id,
         callId: view.callId,
         tool: view.tool,
@@ -208,20 +230,20 @@ export class ApprovalBroker {
     })
   }
 
-  /** 清掉文档里已经没有人在等答复的 pending（崩溃残留）。 */
+  /** 清掉文档里已经没有人在等答复的 pending（崩溃残留） */
   async #reconcile(
     conversationId: ConversationId,
     live: readonly ApprovalView[],
   ): Promise<void> {
     const stored = await this.#harness.snapshot(
-      AppApprovalsDoc,
+      AppApprovalsDoc, // 审批文档类型
       conversationId as DurableConversationId,
       BACKGROUND_CONTEXT,
     )
     const pending = stored?.pending ?? []
     if (pending.length === live.length) return
-    await this.#commit(conversationId, (doc) => {
-      doc.pending = live.map((view) => ({
+    await this.#commit(conversationId, doc => {
+      doc.pending = live.map(view => ({
         id: view.id,
         callId: view.callId,
         tool: view.tool,
@@ -231,15 +253,19 @@ export class ApprovalBroker {
     })
   }
 
-  /** 提交文档变更：失败了只审计掉，不影响审批本身。 */
+  /** 提交文档变更 */
   async #commit(
     conversationId: number,
+    // AppApprovals：待批队列+最近一次审批决定
     mutate: (doc: AppApprovals) => void,
     context: Context = BACKGROUND_CONTEXT,
   ): Promise<void> {
     try {
-      await this.#harness.commit(async (tx) => {
-        const doc = await tx.doc(AppApprovalsDoc, conversationId as DurableConversationId)
+      await this.#harness.commit(async tx => {
+        const doc = await tx.doc(
+          AppApprovalsDoc,
+          conversationId as DurableConversationId,
+        )
         mutate(doc)
       }, context)
     } catch {

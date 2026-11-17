@@ -1,5 +1,5 @@
 /**
- * 输入框：Enter 发送，Shift+Enter 换行。
+ * 输入框：Enter 发送，Shift+Enter 换行
  *
  * 发送后不清空本地「乐观消息」——界面不插入任何未提交的内容，
  * 用户消息出现在列表里，是因为它已经作为条目写进库并随帧推回来。
@@ -15,7 +15,9 @@ export type ComposerProps = {
   readonly onAbort: () => void
 }
 
+// 消息编辑与发送
 export function Composer({ disabled, running, onSend, onAbort }: ComposerProps) {
+  // 消息草稿
   const [draft, setDraft] = useState("")
 
   const send = (): void => {

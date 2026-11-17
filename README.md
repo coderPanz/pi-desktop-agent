@@ -164,7 +164,8 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm smoke   # 提交前例行
 改动前请读 [AGENT.md](./AGENT.md)（名字是契约、先提交后展示、主进程唯一写者、错误按范围分级）。
 ci 在 `.github/workflows/ci.yml`：`verify` 跑四项检查，`desktop` 单独验证构建产物。
 
-core 的分层与边界见 [`packages/core/README.md`](./packages/core/README.md)。
+core 的分层与边界见 [`packages/core/README.md`](./packages/core/README.md)；
+终端入口的参数、REPL 命令与退出码见 [`apps/cli/README.md`](./apps/cli/README.md)。
 
 ## 故障排查
 

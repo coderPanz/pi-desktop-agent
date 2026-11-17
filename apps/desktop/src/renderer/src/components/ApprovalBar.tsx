@@ -14,6 +14,7 @@ export type ApprovalBarProps = {
 }
 
 export function ApprovalBar({ pending, onRespond }: ApprovalBarProps) {
+  // 如果待审批的数量为 0 就无需渲染该审批组件
   if (pending.length === 0) return null
 
   return (

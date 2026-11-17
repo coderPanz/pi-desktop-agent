@@ -31,7 +31,6 @@ function bridge(): NonNullable<Window["pi"]> {
   return api
 }
 
-/** 发一条命令；失败抛 `IpcCallError`。 */
 export async function invoke<K extends IpcChannel>(
   channel: K,
   request: IpcRequest<K>,

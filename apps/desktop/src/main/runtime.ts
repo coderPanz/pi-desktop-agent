@@ -5,18 +5,6 @@ import path from "node:path"
 
 import type { Context } from "@earendil-works/chord"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
-/**
- * 它是 SDK 里「对 pi.agent 文档的一次修改」的形状
- * export type AgentChange = {
-     model?: ModelRef | null                       // 用哪个模型
-     thinkingLevel?: ModelThinkingLevel | null      // 思考强度
-     extensions?: Extension[] | { add?; remove? } | null   // 选中哪些扩展
-     tools?: ToolRegistration[] | { remove } | null        // 启用哪些工具
-     modelTools?: ToolRegistration[] | { remove?; add? } | null  // 模型能看见哪些工具
-     instructions?: string | null                  // 追加的指令段
-     cwd?: string | null                           // 会话的工作目录
-   }
- */
 import type { AgentChange } from "@earendil-works/pi-durable"
 import type { Models } from "@earendil-works/pi-ai"
 import {
@@ -44,21 +32,28 @@ import type { HostInfo, PushMap, PushChannel, ViewFrame } from "@pi/shared-types
 
 // 桌面端运行时配置
 export type DesktopRuntimeOptions = {
-  /** 数据根：桌面传 `app.getPath("userData")` */
+  /** 数据根： 桌面端所有 durable 状态都在 dataRoot/session.sqlite； 工作区 dataRoot/workspace/*（包括模型产出的文件、工具执行的痕迹）；  自定义工具 dataRoot/tools */
   readonly dataDir: string
-  /** 推送出口：Electron 里是 `webContents.send` */
-  readonly publish: <K extends PushChannel>(channel: K, payload: PushMap[K]) => void
+  /** 推送通信 ：Electron 里是 `webContents.send` */
+  readonly publish: <K extends PushChannel>(
+    channel: K,
+    payload: PushMap[K],
+  ) => void
   readonly appVersion: string
   readonly platform: string
-  readonly versions: { readonly electron: string | undefined; readonly node: string; readonly chrome: string | undefined }
+  readonly versions: {
+    readonly electron: string | undefined
+    readonly node: string
+    readonly chrome: string | undefined
+  }
   /** 是否写文件；`false` 用内存库（排障用） */
   readonly memory?: boolean
   readonly log?: (line: string, detail?: Record<string, unknown>) => void
 }
 
 /** 
- * 配置好的桌面运行时：一个进程一份，Harness 只有一个
- * 谁能拿到 Harness
+ * 配置好的桌面运行时
+ * 谁能拿到 Harness？
  ```
    主进程（唯一）
      DesktopRuntime          ← apps/desktop/src/main/runtime.ts
@@ -74,24 +69,24 @@ export type DesktopRuntimeOptions = {
  */
 export class DesktopRuntime {
   readonly paths: WorkspacePaths // 工作区路径
-  readonly host: HarnessHost // HarnessHost → Harness → Storage(SQLite)
-  readonly hub: FrameHub // FrameHub（watch 会话，发帧）
+  readonly host: HarnessHost // Harness 主机，包括 Harness-根会话-storeage 以及初始化和关闭 Harness 的方法
+  readonly hub: FrameHub // FrameHub（监听会话变更，统一进行发帧）
   readonly approvals: ApprovalBroker // 审批
   readonly router: IpcRouter // 路由处理
   readonly info: HostInfo // 宿主信息
-  readonly #publish: DesktopRuntimeOptions["publish"] // 推送出口
-  readonly #stopSink: () => void // 停止帧 sink
-  #closing: Promise<void> | undefined
+  readonly #publish: DesktopRuntimeOptions["publish"] // 推送出口： 用于运行时想把某个状态告诉界面时
+  readonly #stopSink: () => void // 停止帧 sink ：用于停止向接受者推送会话帧
+  #closing: Promise<void> | undefined // 应用退出，持续关闭
 
   private constructor(input: {
-    options: DesktopRuntimeOptions
-    paths: WorkspacePaths
-    host: HarnessHost
-    hub: FrameHub
-    approvals: ApprovalBroker
-    router: IpcRouter
-    info: HostInfo
-    stopSink: () => void
+    options: DesktopRuntimeOptions // 运行时配置
+    paths: WorkspacePaths // 工作区路径
+    host: HarnessHost // Harness 主机
+    hub: FrameHub // FrameHub（监听会话变更，统一进行发帧）
+    approvals: ApprovalBroker // 审批
+    router: IpcRouter // 路由处理
+    info: HostInfo // 宿主信息
+    stopSink: () => void // 停止帧 sink ：用于停止向接受者推送会话帧
   }) {
     this.paths = input.paths
     this.host = input.host
@@ -103,20 +98,22 @@ export class DesktopRuntime {
     this.#stopSink = input.stopSink
   }
 
+  // 打开运行时： 初始化所有对象，并返回运行时实例
   static async open(options: DesktopRuntimeOptions): Promise<DesktopRuntime> {
     const log = options.log ?? (() => {})
     const paths = workspacePaths(path.resolve(options.dataDir))
     if (options.memory !== true) await ensureWorkspacePaths(paths)
 
+    // 创建存储： 用于存储会话状态
     const storage = await createStorage(
-      options.memory === true ? { kind: "memory" } : { kind: "file", file: paths.db },
+      options.memory === true
+        ? { kind: "memory" }
+        : { kind: "file", file: paths.db },
     )
 
-    /**
-     * 审批中枢要在 Harness 之后建，而扩展要在 Harness 之前装进注册表——
-     * 用一层转发把这个环打开：真正触发审批时 broker 早已就绪。
-     */
+    // 创建审批管理
     const approvalsRef: { current?: ApprovalBroker } = {}
+    // 创建注册表： 用于存储扩展
     const registry = createPiRegistry({
       extensions: [
         createCodingExtension({
@@ -131,6 +128,7 @@ export class DesktopRuntime {
     let models: Models | undefined
     const resolveModels = (): Models => (models ??= createModelRegistry())
 
+    // 创建 Harness 主机： 整体 harness 流程
     const host = await HarnessHost.open({
       storage,
       registry,
@@ -141,24 +139,35 @@ export class DesktopRuntime {
       log,
     })
 
-    const manager = await SessionManager.open({ harness: host.harness, storage })
-
-    const hub = new FrameHub(host.harness, {
-      onError: (error) => log("frame sink 抛错", { message: String(error) }),
+    // 创建会话管理器： 用于管理会话状态
+    const manager = await SessionManager.open({
+      harness: host.harness,
+      storage,
     })
-    const stopFrames = hub.addSink((frame: ViewFrame) => options.publish("view", frame))
-    const stopSubmissions = host.harness.subscribeCommits((publication) => {
+
+    // 创建帧管理器： 用于管理会话帧
+    const hub = new FrameHub(host.harness, {
+      onError: error => log("frame sink 抛错", { message: String(error) }),
+    })
+    // 创建会话帧的接受者
+    const stopFrames = hub.addSink((frame: ViewFrame) =>
+      options.publish("view", frame),
+    )
+    // 停止提交
+    const stopSubmissions = host.harness.subscribeCommits(publication => {
       for (const change of publication.changes) {
         if (change.type !== "submission") continue
         const view = materializeSubmission(change.value)
         if (view !== undefined) options.publish("submission", view)
       }
     })
+    // 停止向接收方发帧
     const stopSink = (): void => {
       stopFrames()
       stopSubmissions()
     }
 
+    // 创建审批管理器： 用于管理审批状态
     const broker = new ApprovalBroker({
       harness: host.harness,
       onChange: (conversationId, pending) =>
@@ -167,7 +176,9 @@ export class DesktopRuntime {
     })
     approvalsRef.current = broker
 
+    // 创建根会话 Agent 配置
     const rootAgent = await host.root.agent(BACKGROUND_CONTEXT)
+    // 创建宿主信息： 用于存储宿主信息
     const info: HostInfo = {
       appVersion: options.appVersion,
       electron: options.versions.electron,
@@ -179,6 +190,7 @@ export class DesktopRuntime {
       model: rootAgent.model,
     }
 
+    // 创建路由处理： 用于处理 IPC 请求
     const router = new IpcRouter({
       harness: host.harness,
       manager,
@@ -188,9 +200,21 @@ export class DesktopRuntime {
     })
 
     log("registry", summarizeRegistry(registry.snapshot()))
-    log("runtime ready", { conversationId: manager.conversationId, dataDir: paths.root })
+    log("runtime ready", {
+      conversationId: manager.conversationId,
+      dataDir: paths.root,
+    })
 
-    return new DesktopRuntime({ options, paths, host, hub, approvals: broker, router, info, stopSink })
+    return new DesktopRuntime({
+      options,
+      paths,
+      host,
+      hub,
+      approvals: broker,
+      router,
+      info,
+      stopSink,
+    })
   }
 
   /** 幂等关闭：先停推送，再结算审批，然后停帧，最后关 Harness（连存储一起收）。 */
@@ -199,9 +223,16 @@ export class DesktopRuntime {
     return this.#closing
   }
 
+  // 关闭运行时
   async #close(context: Context): Promise<void> {
     // 先告诉界面「要关了」，再停推送：反过来的话这条状态发不出去。
-    this.#publish("host.status", { scheduling: "closing", tasks: 0, running: 0, blocked: 0, submissions: 0 })
+    this.#publish("host.status", {
+      scheduling: "closing",
+      tasks: 0,
+      running: 0,
+      blocked: 0,
+      submissions: 0,
+    })
     this.#stopSink()
     this.approvals.closeAll()
     await this.hub.closeAll()
