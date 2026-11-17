@@ -13,6 +13,7 @@ release/
 .data/
 .data-test/
 logs/
+local-docs/
 
 # 系统与噪声
 .DS_Store
