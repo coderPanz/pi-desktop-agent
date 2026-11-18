@@ -104,6 +104,21 @@ details[open] > summary .pi-disclosure { transform: rotate(90deg); }
 .pi-markdown hr { @apply my-6 border-divider; }
 .pi-markdown img { @apply max-w-full rounded-xl; }
 
+/*
+ * 流式进场：新到的词由外向内收束（略大、略偏移、略模糊）落回正常排版。
+ * `pi-stream-token` 始终是 inline-block：落定时只摘掉动画类，display 不变，行尾不会重新折行。
+ */
+.pi-stream-token { display: inline-block; }
+.pi-stream-word {
+  animation: pi-stream-enter 400ms cubic-bezier(.22, .72, .24, 1) both;
+  transform-origin: 50% 60%;
+}
+@keyframes pi-stream-enter {
+  from { opacity: .07; filter: blur(1.4px); transform: translate3d(0, -.1em, 0) scale(1.28); }
+  55% { opacity: .9; filter: blur(.5px); }
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+
 @media (max-width: 820px) {
   .pi-titlebar { @apply gap-3; }
   .pi-titlebar .pi-model-label { @apply max-w-35; }

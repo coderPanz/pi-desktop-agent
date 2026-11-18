@@ -8,8 +8,8 @@ import type { ViewEntry, ViewSnapshot } from "@pi/shared-types"
 
 import type { QueuedItem, ToolSlot } from "../docs.ts"
 import { Icon } from "./Icon.tsx"
-import { MarkdownText } from "./Markdown.tsx"
 import { MessageRow } from "./MessageRow.tsx"
+import { StreamingMarkdown } from "./StreamingMarkdown.tsx"
 import { ToolCard } from "./ToolCard.tsx"
 
 export type MessageListProps = {
@@ -49,7 +49,7 @@ export function MessageList({ snapshot, running, tools, queued }: MessageListPro
         {streaming ? (
           <div>
             <p className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-secondary"><Icon name="sparkles" className="size-3.5 text-accent" />正在生成</p>
-            <MarkdownText text={liveText} />
+            <StreamingMarkdown text={liveText} />
           </div>
         ) : null}
         {running && !streaming ? <p className="flex items-center gap-2 text-[12px] text-secondary"><Icon name="sparkles" className="size-3.5 text-accent" />生成中…</p> : null}
