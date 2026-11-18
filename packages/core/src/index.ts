@@ -10,6 +10,7 @@
  *   session/manager.ts     会话操作（只返回数据，不打印）
  *   paths.ts               WorkspacePaths（根由调用方注入）
  *   storage/create-storage.ts  文件库 / 内存库
+ *   storage/purge.ts           物理删除会话（SDK 没有删除接口，这里对 SQLite 做级联删除）
  *   harness/open-harness.ts     storage → open → resume → root
  *   harness/registry.ts         装配内置扩展
  *   harness/host.ts             HarnessHost（close 幂等）
@@ -49,6 +50,8 @@ export type { WorkspacePaths, WorkspacePathsOptions } from "./paths.ts"
 
 export { createStorage, DEFAULT_BUSY_TIMEOUT_MS } from "./storage/create-storage.ts"
 export type { CreateStorageOptions, StorageTarget } from "./storage/create-storage.ts"
+export { createConversationPurge } from "./storage/purge.ts"
+export type { ConversationPurge, PurgeReport } from "./storage/purge.ts"
 
 export { openHarness } from "./harness/open-harness.ts"
 export type { OpenedHarness, OpenHarnessOptions } from "./harness/open-harness.ts"

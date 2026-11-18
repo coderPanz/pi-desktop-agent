@@ -49,6 +49,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
           <span className="truncate text-[12px] text-secondary">删除 #{item.id}？</span>
           <button
             className="rounded-md bg-danger-soft px-2 py-1 text-[12px] font-medium text-danger hover:bg-danger/15"
+            title="从库里彻底删除，不可恢复"
             onClick={() => {
               setConfirming(false)
               actions.delete(item.id)
@@ -90,7 +91,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
           {deletable ? (
             <button
               aria-label={`删除会话 #${item.id}`}
-              title="删除会话（从列表移除）"
+              title="删除会话（不可恢复）"
               className="mt-1 mr-1 rounded-md p-1.5 text-tertiary opacity-0 group-hover:opacity-100 hover:bg-danger-soft hover:text-danger focus-visible:opacity-100"
               onClick={() => setConfirming(true)}
             >

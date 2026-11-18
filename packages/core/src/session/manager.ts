@@ -22,6 +22,8 @@ import {
   ROOT_CONVERSATION_ID,
 } from "@earendil-works/pi-durable"
 import { AppTrashDoc } from "@pi/shared-docs"
+
+import type { ConversationPurge } from "../storage/purge.ts"
 import type {
   AgentChange,
   CompactionResult,
@@ -67,6 +69,8 @@ export type SessionManagerOptions = {
   readonly conversationId?: ConversationId
   /** 入队策略的**可变**持有者：`HarnessOptions.settings` 每次读取它，改这里立即生效。 */
   readonly modes?: QueueModes
+  /** 物理删除能力；内存库没有，缺省时 `delete()` 退回「从会话列表移除」。 */
+  readonly purge?: ConversationPurge
 }
 
 // 提交选择
@@ -82,6 +86,7 @@ export class SessionManager {
   #storage: Storage // 存储
   #conversationId: ConversationId // 当前会话 id
   #modes: QueueModes // 入队策略
+  #purge: ConversationPurge | undefined // 物理删除（文件库才有）
   #watches = new Map<ConversationId, ConversationWatch>() // 会话订阅映射
 
   private constructor(
@@ -92,6 +97,7 @@ export class SessionManager {
     this.#storage = options.storage
     this.#conversationId = conversationId
     this.#modes = options.modes ?? defaultQueueModes()
+    this.#purge = options.purge
   }
 
   /**
@@ -171,11 +177,13 @@ export class SessionManager {
   }
 
   /**
-   * 删除会话：写进 `app.trash`，此后不再出现在会话列表里。
+   * 删除会话：不可恢复。
    *
-   * 为什么不是物理删除：`pi-durable` 的 `Storage` 没有删除接口，会话/条目一旦创建就不可变，
-   * 直接删库会破坏 id 单调、commit `seq` 连续与 fork 的祖先链。库里的条目与任务保持原样，
-   * 想恢复只需把 id 从这份文档里拿掉。
+   * - 文件库：交给 `purge` 做物理删除（条目、任务、提交、文档、登记行一起删）。`pi-durable` 的
+   *   `Storage` 没有删除接口，所以这是「唯一写者」的唯一例外，见 `storage/purge.ts`；
+   * - 内存库（测试、`--memory`）没有 SQL：退回写 `app.trash`，只从会话列表移除。
+   *
+   * 三种情况直接拒绝：根会话、正在运行、还有子会话（分叉/被 task 拥有）。
    */
   async delete(
     conversationId: ConversationId,
@@ -189,6 +197,10 @@ export class SessionManager {
       throw new UserError(`会话 #${String(conversationId)} 正在运行，先停止再删除。`)
     }
     const id = conversationId as number
+    if (this.#purge !== undefined) {
+      await this.#purge(id)
+      return
+    }
     await this.#harness.commit(async tx => {
       const trash = await tx.doc(AppTrashDoc)
       if (!trash.hidden.includes(id)) {

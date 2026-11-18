@@ -178,6 +178,8 @@ export class IpcRouter {
       case "conv.delete": {
         const id = conversationIdOf(input)
         await this.#manager.delete(id, context)
+        // 会话已经不在库里，帧没人要了：停掉 watch，别再为一个已删除的会话推帧
+        await this.#hub.close(id)
         return {} as IpcResponse<K>
       }
 

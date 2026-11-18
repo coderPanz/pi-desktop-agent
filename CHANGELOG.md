@@ -39,10 +39,15 @@
   折叠状态只存在界面内存（重启回到全展开）。分叉来源从「← #N」改为 `title` 提示，行里靠缩进表达层级
 - 侧栏会话行支持删除：悬停/聚焦出现垃圾桶图标，二次确认后删除，删除的正是当前会话时切回根会话；
   运行中的会话与根会话不给删除入口
-- 删除语义是「从列表移除」，写 session 级 `app.trash`（`hidden: number[]`）：`pi-durable` 的 `Storage`
-  没有删除接口，会话与条目不可变，直接删库会破坏 id 单调、commit `seq` 连续与 fork 祖先链；
-  `SessionManager.delete` 校验存在性 / 根会话 / 忙闲，`conv.list` 过滤已删除，`conv.delete` 走 IPC 白名单
-- 路由回归：删除后列表不再返回、记录仍可 `conv.open`、重复删除幂等、根会话与不存在的会话报 `INVALID_ARGUMENT`
+- 删除是**物理删除、不可恢复**（`storage/purge.ts`）：SDK 的 `Storage` 只有 `commit()`、没有删除接口，
+  所以自己开一条 SQLite 连接，在 `BEGIN IMMEDIATE` 事务里级联删掉该会话的条目 / 任务 / 提交 /
+  会话作用域文档与文档版本 / `record_ids` 登记行；`durable_metadata.next_id / next_seq` 一行不碰，
+  id 不会被重用、seq 不回退。保护条件：根会话、未结束的任务、未结算的提交、有子会话（分叉或被 task 拥有）一律拒绝。
+  内存库（`--memory` / 测试）没有 SQL 后端，退回把 id 写进 session 级 `app.trash` 从列表移除
+- `conv.delete` 删完顺手 `FrameHub.close(id)` 停掉该会话的 watch；`AGENT.md §4` 补记「唯一写者」的唯一例外
+- 回归：真文件库上验对话/条目/任务/文档/登记行全删干净、无孤儿版本、`harness.conversation` 查不到；
+  有未结束任务时拒绝且一行不删；根会话与有子会话的会话拒绝、子会话删掉后父会话可删；删掉最大会话后
+  新会话 id 继续增大、计数器不变。内存库那条仍验「退回列表移除 + 重复删除幂等」
 
 ### 变更
 

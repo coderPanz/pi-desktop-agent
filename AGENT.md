@@ -25,6 +25,10 @@ Extension / Tool / Document kind / Entry kind / Task name / provider id 一旦�
 
 Harness 只活在主进程或 CLI 进程里。一个库文件只允许一个 Harness；渲染进程只有只读副本，通过 `IpcMap` 请求变更。
 
+唯一例外：**物理删除会话**（`packages/core/src/storage/purge.ts`）。`pi-durable` 的 `Storage` 只有 `commit()`、没有删除接口，
+所以删库只能自己开一条连接做级联删除。因此它必须：只在会话空闲时调用（有未结束任务、未结算提交、子会话一律拒绝）、
+一个 `BEGIN IMMEDIATE` 事务里删完、绝不碰 `durable_metadata.next_id / next_seq`（否则 id 会被重用、seq 会回退）。
+
 ## 5. 错误按范围分级
 
 - `UserError`：当前状态不满足操作前提（会话不存在、无可分叉条目）。说一句就继续，不算进程失败。

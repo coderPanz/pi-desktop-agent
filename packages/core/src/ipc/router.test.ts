@@ -5,6 +5,9 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { Models } from "@earendil-works/pi-ai"
 import type { ConversationId } from "@earendil-works/pi-durable"
@@ -17,6 +20,7 @@ import { HarnessHost } from "../harness/host.ts"
 import { createPiRegistry } from "../harness/registry.ts"
 import { SessionManager } from "../session/manager.ts"
 import { createStorage } from "../storage/create-storage.ts"
+import { createConversationPurge } from "../storage/purge.ts"
 import { IpcRouter } from "./router.ts"
 
 /** 这些用例不调模型：`Harness.open` 只需 `getAuth` 存在。 */
@@ -38,16 +42,28 @@ type Fixture = {
   readonly host: HarnessHost
   readonly hub: FrameHub
   readonly frames: ViewFrame[]
+  /** 文件库用例的临时目录，结束时删掉。 */
+  readonly dir: string | undefined
 }
 
-async function fixture(): Promise<Fixture> {
-  const storage = await createStorage({ kind: "memory" })
+async function fixture(options: { readonly file?: boolean } = {}): Promise<Fixture> {
+  // 内存库没有 SQL 后端；文件库才装得上物理删除能力（会话删除的两条路径分别验一次）
+  const dir = options.file === true ? await mkdtemp(path.join(tmpdir(), "pi-router-")) : undefined
+  const target =
+    dir === undefined
+      ? ({ kind: "memory" } as const)
+      : ({ kind: "file", file: path.join(dir, "router.sqlite") } as const)
+  const storage = await createStorage(target)
   const host = await HarnessHost.open({
     storage,
     registry: createPiRegistry(),
     models: NO_MODELS,
   })
-  const manager = await SessionManager.open({ harness: host.harness, storage })
+  const manager = await SessionManager.open({
+    harness: host.harness,
+    storage,
+    purge: createConversationPurge(target),
+  })
   const frames: ViewFrame[] = []
   const hub = new FrameHub(host.harness)
   hub.addSink((frame) => frames.push(frame))
@@ -59,7 +75,7 @@ async function fixture(): Promise<Fixture> {
     approvals,
     info: INFO,
   })
-  return { router, host, hub, frames }
+  return { router, host, hub, frames, dir }
 }
 
 /** 取成功值；失败就让断言把错误码打出来。 */
@@ -102,6 +118,28 @@ test("conv.create 建会话，conv.list 能列到", async () => {
   await host.close()
 })
 
+test("conv.delete 在文件库是物理删除：列表消失、句柄打不开、帧订阅也停了", async () => {
+  const { router, host, hub, dir } = await fixture({ file: true })
+  try {
+    const created = valueOf(await router.handle("conv.create", {})) as { conversationId: number }
+    const id = created.conversationId
+    valueOf(await router.handle("conv.open", { conversationId: id }))
+    assert.equal(hub.cursors().has(id as ConversationId), true, "打开过就有 watch")
+
+    assert.deepEqual(valueOf(await router.handle("conv.delete", { conversationId: id })), {})
+
+    const reopened = await router.handle("conv.open", { conversationId: id })
+    assert.equal(reopened.ok, false)
+    assert.equal(reopened.ok ? "" : reopened.error.code, "NOT_FOUND", "库里已经没有这个会话")
+    const listed = valueOf(await router.handle("conv.list", { limit: 20 })) as readonly { id: number }[]
+    assert.ok(!listed.some((item) => item.id === id))
+    assert.equal(hub.cursors().has(id as ConversationId), false, "删完要停掉这个会话的 watch")
+  } finally {
+    await host.close()
+    if (dir !== undefined) await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test("conv.open 返回副本与起始帧号，之后每帧 +1", async () => {
   const { router, host, frames } = await fixture()
   const created = valueOf(await router.handle("conv.create", {})) as { conversationId: number }
@@ -137,7 +175,7 @@ test("conv.open 返回副本与起始帧号，之后每帧 +1", async () => {
   await host.close()
 })
 
-test("conv.delete 只从列表移除：记录仍可打开，重复删除幂等，根会话不可删", async () => {
+test("conv.delete：内存库没有 SQL 后端，退回「从列表移除」（文件库由 purge 用例验物理删除）", async () => {
   const { router, host } = await fixture()
   const created = valueOf(await router.handle("conv.create", {})) as { conversationId: number }
   const id = created.conversationId

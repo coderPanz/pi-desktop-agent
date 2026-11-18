@@ -12,6 +12,7 @@ import {
   createModelRegistry,
   createNodeEnvFactory,
   createPiRegistry,
+  createConversationPurge, // 删除会话记录
   createStorage,
   DEFAULT_APPROVAL_TIMEOUT_MS,
   ensureWorkspacePaths,
@@ -105,11 +106,11 @@ export class DesktopRuntime {
     if (options.memory !== true) await ensureWorkspacePaths(paths)
 
     // 创建存储： 用于存储会话状态
-    const storage = await createStorage(
+    const target =
       options.memory === true
-        ? { kind: "memory" }
-        : { kind: "file", file: paths.db },
-    )
+        ? ({ kind: "memory" } as const)
+        : ({ kind: "file", file: paths.db } as const)
+    const storage = await createStorage(target)
 
     // 创建审批管理
     const approvalsRef: { current?: ApprovalBroker } = {}
@@ -144,6 +145,8 @@ export class DesktopRuntime {
     const manager = await SessionManager.open({
       harness: host.harness,
       storage,
+      // 文件库才有物理删除；内存库（--memory）退回「从列表移除」
+      purge: createConversationPurge(target),
     })
 
     // 创建帧管理器： 用于管理会话帧
