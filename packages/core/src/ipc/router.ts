@@ -174,6 +174,13 @@ export class IpcRouter {
       }
 
       // 重置会话
+      // 删除会话：只从列表移除，条目与任务仍留在库里
+      case "conv.delete": {
+        const id = conversationIdOf(input)
+        await this.#manager.delete(id, context)
+        return {} as IpcResponse<K>
+      }
+
       case "conv.reset": {
         const id = conversationIdOf(input)
         /**

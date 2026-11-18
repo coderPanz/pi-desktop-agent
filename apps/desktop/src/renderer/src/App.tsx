@@ -5,6 +5,7 @@ import type { ConversationId } from "@pi/shared-types"
 
 import { ApprovalBar } from "./components/ApprovalBar.tsx"
 import { Composer } from "./components/Composer.tsx"
+import { ConversationTree } from "./components/ConversationTree.tsx"
 import { Icon } from "./components/Icon.tsx"
 import { MessageList } from "./components/MessageList.tsx"
 import {
@@ -15,6 +16,7 @@ import {
   toolSlots,
 } from "./docs.ts"
 import { invoke } from "./ipc.ts"
+import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
 import { useApprovals, useHost } from "./hooks/useHost.ts"
 import { useSubmission } from "./hooks/useSubmission.ts"
@@ -30,6 +32,10 @@ export function App() {
   const [error, setError] = useState<string | undefined>(undefined)
   // 当前界面正在进行的动作，本质是一个互斥锁 + 状态标记
   const [busyAction, setBusyAction] = useState<string | undefined>(undefined)
+  // 侧栏树里被折叠起来的会话（展开状态只活在界面内存，重启回到全展开）
+  const [collapsed, setCollapsed] = useState<ReadonlySet<ConversationId>>(
+    new Set(),
+  )
   // 对话内容、流式生成的状态
   const conversation = useConversation(selected)
   // 当前会话还有哪些工具调用在等你批准」
@@ -42,6 +48,18 @@ export function App() {
     if (selected === undefined && host.info !== undefined)
       setSelected(host.info.rootConversationId)
   }, [host.info, selected])
+
+  // 选中的会话必须在树里看得见：父链一律展开
+  useEffect(() => {
+    const ancestors = conversationAncestors(host.conversations, selected)
+    if (ancestors.length === 0) return
+    setCollapsed((current) => {
+      if (!ancestors.some((id) => current.has(id))) return current
+      const next = new Set(current)
+      for (const id of ancestors) next.delete(id)
+      return next
+    })
+  }, [host.conversations, selected])
 
   // 会话只读副本
   const snapshot = conversation.snapshot
@@ -121,6 +139,25 @@ export function App() {
     })
   }
 
+  // 删除只把会话从列表移除；如果删的正是当前打开的，切回根会话
+  const remove = (id: ConversationId): void => {
+    void run("删除", async () => {
+      await invoke("conv.delete", { conversationId: id })
+      if (id === selected) setSelected(host.info?.rootConversationId)
+      await host.refresh()
+    })
+  }
+
+  // 折叠/展开一行的子会话
+  const toggle = (id: ConversationId): void => {
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   const reset = (): void => {
     if (selected === undefined) return
     void run("重置", async () => {
@@ -183,36 +220,13 @@ export function App() {
             className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto"
             aria-label="会话列表"
           >
-            {host.conversations.map(item => (
-              <button
-                key={item.id}
-                data-conversation-id={item.id}
-                aria-pressed={item.id === selected}
-                onClick={() => setSelected(item.id)}
-                className={`flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left ${item.id === selected ? "bg-selection text-accent" : "text-secondary hover:bg-hover active:bg-hover"}`}
-              >
-                <Icon
-                  name={item.parent === undefined ? "message" : "branch"}
-                  className="mt-0.5"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-medium">
-                    会话 #{item.id}
-                  </span>
-                  {item.parent === undefined ? null : (
-                    <span className="mt-0.5 block text-[11px] text-secondary">
-                      ← #{item.parent.conversationId}
-                    </span>
-                  )}
-                  {item.busy || item.queued > 0 ? (
-                    <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-secondary">
-                      {item.busy ? <span>忙</span> : null}
-                      {item.queued > 0 ? <span>排队 {item.queued}</span> : null}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
-            ))}
+            <ConversationTree
+              items={host.conversations}
+              selected={selected}
+              collapsed={collapsed}
+              rootId={host.info?.rootConversationId}
+              actions={{ select: setSelected, delete: remove, toggle }}
+            />
           </div>
 
           <div className="mt-5 shrink-0 border-t border-divider pt-4">

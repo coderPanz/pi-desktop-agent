@@ -61,6 +61,11 @@ export type IpcMap = {
     readonly request: { readonly conversationId: ConversationId; readonly at?: EntryId }
     readonly response: { readonly conversationId: ConversationId }
   }
+  /** 删除会话：只从会话列表移除（库里的条目与任务保留，pi-durable 没有删除接口）。 */
+  "conv.delete": {
+    readonly request: { readonly conversationId: ConversationId }
+    readonly response: Record<string, never>
+  }
   "conv.reset": {
     readonly request: { readonly conversationId: ConversationId; readonly handoff?: string }
     readonly response: Record<string, never>

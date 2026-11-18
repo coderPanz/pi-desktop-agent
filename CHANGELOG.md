@@ -34,6 +34,16 @@
   审批请求排进同一队列，下一行就是答复；输入关闭（EOF）时未答复的审批全部结算为拒绝，不留挂起的 Promise
 - `PI_LOG_LEVEL=debug` 启动时打印注册表摘要（扩展名 / 工具名 / 任务名），验收装配看这一行
 
+- 侧栏会话改为树形结构：按 `parent.conversationId` 把扁平列表拼成森林（`lib/conversationTree.ts`，纯函数、有单测），
+  子会话缩进挂在父会话下；有子会话的行显示折叠箭头（`aria-expanded`），选中子会话时父链自动展开，
+  折叠状态只存在界面内存（重启回到全展开）。分叉来源从「← #N」改为 `title` 提示，行里靠缩进表达层级
+- 侧栏会话行支持删除：悬停/聚焦出现垃圾桶图标，二次确认后删除，删除的正是当前会话时切回根会话；
+  运行中的会话与根会话不给删除入口
+- 删除语义是「从列表移除」，写 session 级 `app.trash`（`hidden: number[]`）：`pi-durable` 的 `Storage`
+  没有删除接口，会话与条目不可变，直接删库会破坏 id 单调、commit `seq` 连续与 fork 祖先链；
+  `SessionManager.delete` 校验存在性 / 根会话 / 忙闲，`conv.list` 过滤已删除，`conv.delete` 走 IPC 白名单
+- 路由回归：删除后列表不再返回、记录仍可 `conv.open`、重复删除幂等、根会话与不存在的会话报 `INVALID_ARGUMENT`
+
 ### 变更
 
 - 会话区滚动改为「贴底跟随」（`useStickToBottom`）：只有用户本来就在底部时才跟着流式内容走，往上翻就保持不动，

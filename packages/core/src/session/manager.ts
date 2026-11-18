@@ -21,6 +21,7 @@ import {
   LiveDoc,
   ROOT_CONVERSATION_ID,
 } from "@earendil-works/pi-durable"
+import { AppTrashDoc } from "@pi/shared-docs"
 import type {
   AgentChange,
   CompactionResult,
@@ -155,14 +156,52 @@ export class SessionManager {
       undefined,
       context,
     )
+    const hidden = new Set(await this.#hidden(context))
     return await Promise.all(
-      page.items.map(async record => ({
-        id: record.id,
-        parent: record.parent,
-        busy: await this.isBusy(record.id, context),
-        queued: (await this.#inboxItems(record.id, context)).length,
-      })),
+      page.items
+        // 「删除」只是从列表移除：记录仍在库里，这里不返回
+        .filter(record => !hidden.has(record.id))
+        .map(async record => ({
+          id: record.id,
+          parent: record.parent,
+          busy: await this.isBusy(record.id, context),
+          queued: (await this.#inboxItems(record.id, context)).length,
+        })),
     )
+  }
+
+  /**
+   * 删除会话：写进 `app.trash`，此后不再出现在会话列表里。
+   *
+   * 为什么不是物理删除：`pi-durable` 的 `Storage` 没有删除接口，会话/条目一旦创建就不可变，
+   * 直接删库会破坏 id 单调、commit `seq` 连续与 fork 的祖先链。库里的条目与任务保持原样，
+   * 想恢复只需把 id 从这份文档里拿掉。
+   */
+  async delete(
+    conversationId: ConversationId,
+    context: Context = BACKGROUND_CONTEXT,
+  ): Promise<void> {
+    if (conversationId === ROOT_CONVERSATION_ID) throw new UserError("根会话不能删除。")
+    if ((await this.#harness.conversation(conversationId, context)) === undefined) {
+      throw new UserError(`会话不存在：${String(conversationId)}`)
+    }
+    if (await this.isBusy(conversationId, context)) {
+      throw new UserError(`会话 #${String(conversationId)} 正在运行，先停止再删除。`)
+    }
+    const id = conversationId as number
+    await this.#harness.commit(async tx => {
+      const trash = await tx.doc(AppTrashDoc)
+      if (!trash.hidden.includes(id)) {
+        trash.hidden.push(id)
+        trash.hidden.sort((left, right) => left - right)
+      }
+    }, context)
+  }
+
+  /** 已从列表移除的会话 id。 */
+  async #hidden(context: Context): Promise<readonly number[]> {
+    const trash = await this.#harness.snapshot(AppTrashDoc, context)
+    return trash?.hidden ?? []
   }
 
   /**

@@ -137,6 +137,38 @@ test("conv.open 返回副本与起始帧号，之后每帧 +1", async () => {
   await host.close()
 })
 
+test("conv.delete 只从列表移除：记录仍可打开，重复删除幂等，根会话不可删", async () => {
+  const { router, host } = await fixture()
+  const created = valueOf(await router.handle("conv.create", {})) as { conversationId: number }
+  const id = created.conversationId
+  const listed = async (): Promise<readonly number[]> => {
+    const items = valueOf(await router.handle("conv.list", { limit: 20 })) as readonly { id: number }[]
+    return items.map((item) => item.id)
+  }
+
+  assert.ok((await listed()).includes(id), "新建的会话应在列表里")
+  assert.deepEqual(valueOf(await router.handle("conv.delete", { conversationId: id })), {})
+  assert.ok(!(await listed()).includes(id), "删除后不再出现在列表里")
+
+  // 只藏不删：条目与任务留在库里，句柄还能打开
+  const opened = valueOf(await router.handle("conv.open", { conversationId: id })) as { convId: number }
+  assert.equal(opened.convId, id)
+
+  // 重复删除不报错（界面可能重试）
+  assert.deepEqual(valueOf(await router.handle("conv.delete", { conversationId: id })), {})
+
+  // 根会话是界面兜底，不允许删除
+  const root = await router.handle("conv.delete", { conversationId: INFO.rootConversationId })
+  assert.equal(root.ok, false)
+  assert.equal(root.ok ? "" : root.error.code, "INVALID_ARGUMENT")
+
+  // 不存在的会话
+  const missing = await router.handle("conv.delete", { conversationId: 999 })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.ok ? "" : missing.error.code, "INVALID_ARGUMENT")
+  await host.close()
+})
+
 test("conv.open 未知会话是 NOT_FOUND", async () => {
   const { router, host } = await fixture()
   const result = await router.handle("conv.open", { conversationId: 999 })

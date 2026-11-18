@@ -9,6 +9,7 @@
  *   approvals.ts  app.approvals   待审批副作用与最近决定
  *   entries.ts    app.ui_action / app.approval  应用条目 kind
  *   workspace.ts  app.workspace   界面侧会话状态（可回卷、按 asOf 分叉）
+ *   trash.ts      app.trash       被删除（从列表移除）的会话 id
  *
  * 后续（S7–S9，用到再写，现在写就是猜）：app.kb / app.toolbox / app.smartui
  */
@@ -23,3 +24,6 @@ export { ApprovalEntry, UiActionEntry } from "./entries.ts"
 
 export type { AppWorkspace } from "./workspace.ts"
 export { AppWorkspaceDoc } from "./workspace.ts"
+
+export type { AppTrash } from "./trash.ts"
+export { AppTrashDoc } from "./trash.ts"
