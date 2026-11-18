@@ -18,6 +18,8 @@ export type ConversationSummary = {
   readonly busy: boolean
   /** 排队等着的消息条数。 */
   readonly queued: number
+  /** 侧栏标题：第一条用户消息（超过 10 字时是它的 AI 摘要）；还没说过话就是 undefined。 */
+  readonly title: string | undefined
 }
 
 /** 工具调用明面上的三种状态：等着跑 / 跑着 / 跑完了。 */

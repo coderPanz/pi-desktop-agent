@@ -293,3 +293,122 @@ test("host.close() 幂等", async () => {
   // 正常关闭记作 closed；如果是存储出错，这里会是 failed。
   assert.equal(end.reason, "closed")
 })
+
+// ---------------------------------------------------------------------------
+// 侧栏标题
+// ---------------------------------------------------------------------------
+
+/** 写一条用户消息（`type: "write"` 不触发模型，和上面 appendNote 一个套路）。 */
+async function writeUser(host: HarnessHost, conversationId: number, text: string): Promise<void> {
+  const conversation = await host.harness.conversation(conversationId as never, ctx)
+  assert.ok(conversation !== undefined)
+  await conversation.submit(
+    { type: "write", entry: { kind: "pi.user", model: [{ role: "user", content: text, timestamp: Date.now() }] } },
+    ctx,
+  )
+}
+
+/** 后台摘要不阻塞列表：轮询到条件满足，最多等 2 秒。 */
+async function waitFor(check: () => boolean): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > 2000) throw new Error("等待超时")
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
+async function titleFixture(summarize: (text: string) => Promise<string | undefined>) {
+  const storage = new MemoryStorage()
+  const models = createModels({ credentials: new InMemoryCredentialStore() })
+  const host = await HarnessHost.open({ storage, models, registry: createPiRegistry() })
+  const pushed: { id: number; title: string }[] = []
+  const manager = await SessionManager.open({
+    harness: host.harness,
+    storage,
+    summarizeTitle: summarize,
+    onTitle: (id, title) => pushed.push({ id: id as number, title }),
+  })
+  return { host, manager, pushed }
+}
+
+test("短消息直接当标题，不问模型", async () => {
+  let calls = 0
+  const { host, manager, pushed } = await titleFixture(async () => {
+    calls += 1
+    return "不该被调用"
+  })
+  try {
+    const conversation = await manager.create(ctx)
+    await writeUser(host, conversation.id, "部署脚本")
+    const item = (await manager.list(ctx)).find(summary => summary.id === conversation.id)
+    assert.equal(item?.title, "部署脚本")
+    assert.equal(calls, 0, "10 字以内不调用模型")
+    assert.deepEqual(pushed, [])
+  } finally {
+    await manager.closeWatches()
+    await host.close()
+  }
+})
+
+test("超过 10 字：先显示截断原文，后台摘要一次并推给宿主", async () => {
+  let calls = 0
+  const { host, manager, pushed } = await titleFixture(async text => {
+    calls += 1
+    assert.ok(text.includes("登录"), "把原文交给模型")
+    return "登录失败排查"
+  })
+  try {
+    const conversation = await manager.create(ctx)
+    await writeUser(host, conversation.id, "帮我排查一下登录接口老是超时的问题，日志里只有 504")
+
+    const first = (await manager.list(ctx)).find(summary => summary.id === conversation.id)
+    assert.equal(first?.title, "帮我排查一下登录接口…", "先用截断的原文顶着")
+    assert.equal(calls, 1)
+
+    await waitFor(() => pushed.length > 0)
+    assert.deepEqual(pushed, [{ id: conversation.id, title: "登录失败排查" }])
+
+    const later = (await manager.list(ctx)).find(summary => summary.id === conversation.id)
+    assert.equal(later?.title, "登录失败排查", "摘要落盘后列表直接用")
+    assert.equal(calls, 1, "同一个会话只问一次")
+    assert.equal((await manager.list(ctx)).length >= 1, true)
+    assert.equal(calls, 1, "反复列会话不会重复问模型")
+  } finally {
+    await manager.closeWatches()
+    await host.close()
+  }
+})
+
+test("摘要在保存前失败：标题退回截断原文，且不会每次都重试", async () => {
+  let calls = 0
+  const { host, manager, pushed } = await titleFixture(async () => {
+    calls += 1
+    return undefined
+  })
+  try {
+    const conversation = await manager.create(ctx)
+    await writeUser(host, conversation.id, "把整个仓库的单元测试都补一遍，覆盖率达到八成以上")
+    await manager.list(ctx)
+    await waitFor(() => calls === 1)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const item = (await manager.list(ctx)).find(summary => summary.id === conversation.id)
+    assert.equal(item?.title, "把整个仓库的单元测试…")
+    assert.equal(calls, 1, "失败只记一次，不重复烧模型")
+    assert.deepEqual(pushed, [])
+  } finally {
+    await manager.closeWatches()
+    await host.close()
+  }
+})
+
+test("还没说过话的会话没有标题", async () => {
+  const { host, manager } = await titleFixture(async () => undefined)
+  try {
+    const conversation = await manager.create(ctx)
+    const item = (await manager.list(ctx)).find(summary => summary.id === conversation.id)
+    assert.equal(item?.title, undefined)
+  } finally {
+    await manager.closeWatches()
+    await host.close()
+  }
+})

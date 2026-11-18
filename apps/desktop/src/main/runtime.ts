@@ -14,6 +14,7 @@ import {
   createPiRegistry,
   createConversationPurge, // 删除会话记录
   createStorage,
+  createTitleSummarizer, // 会话标题处理
   DEFAULT_APPROVAL_TIMEOUT_MS,
   ensureWorkspacePaths,
   FrameHub,
@@ -147,6 +148,10 @@ export class DesktopRuntime {
       storage,
       // 文件库才有物理删除；内存库（--memory）退回「从列表移除」
       purge: createConversationPurge(target),
+      // 超过 10 字的第一条用户消息：后台问一次模型压成标题，生成好就推给界面
+      summarizeTitle: createTitleSummarizer(resolveModels),
+      onTitle: (conversationId, title) =>
+        options.publish("conv.title", { conversationId, title }),
     })
 
     // 创建帧管理器： 用于管理会话帧

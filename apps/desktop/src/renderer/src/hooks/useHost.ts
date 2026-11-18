@@ -50,6 +50,19 @@ export function useHost(): HostHandle {
    */
   useEffect(() => subscribe("host.status", setStatus), [])
 
+  /** 后台摘要好了：把列表里那一行换掉，不重拉整份列表。 */
+  useEffect(
+    () =>
+      subscribe("conv.title", payload => {
+        setConversations(current =>
+          current.map(item =>
+            item.id === payload.conversationId ? { ...item, title: payload.title } : item,
+          ),
+        )
+      }),
+    [],
+  )
+
   /**
    * useCallback 稳定函数引用：避免每次渲染时都重新创建新的函数，提高性能
    * 这里是为了避免无限循环

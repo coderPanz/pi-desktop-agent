@@ -49,6 +49,15 @@ export function App() {
       setSelected(host.info.rootConversationId)
   }, [host.info, selected])
 
+  /**
+   * 会话列表跟着条目走：用户消息落盘后，侧栏标题（第一条用户消息 / 它的摘要）才有内容。
+   * 只依赖条数，一次对话里最多刷几次；主进程侧第一条用户消息有缓存，不会重复翻条目。
+   */
+  useEffect(() => {
+    if (conversation.snapshot === undefined) return
+    void host.refresh().catch(() => {})
+  }, [conversation.snapshot?.entries.length, host.info, host.refresh])
+
   // 选中的会话必须在树里看得见：父链一律展开
   useEffect(() => {
     const ancestors = conversationAncestors(host.conversations, selected)

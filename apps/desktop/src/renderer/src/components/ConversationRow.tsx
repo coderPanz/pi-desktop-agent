@@ -70,15 +70,17 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
             data-conversation-id={item.id}
             data-depth={depth}
             aria-pressed={active}
-            title={item.parent === undefined ? undefined : `从会话 #${item.parent.conversationId} 分叉`}
+            title={hintOf(item)}
             className={`flex min-w-0 flex-1 items-start gap-2.5 py-2.5 pr-1 text-left ${active ? "text-accent" : "text-secondary"}`}
             onClick={() => actions.select(item.id)}
           >
             {/* 图标表示「这一条自己是不是分叉」，子会话由左侧箭头表示 */}
             <Icon name={item.parent === undefined ? "message" : "branch"} className="mt-0.5" />
             <span className="min-w-0 flex-1">
-              {/* 层级靠缩进表达，分叉来源挂在 title 上，行里不再重复一遍 */}
-              <span className="block truncate text-[13px] font-medium">会话 #{item.id}</span>
+              {/* 显示会话标题（第一条用户消息 / 它的摘要）；完整 id 与分叉来源挂在 title 提示上 */}
+              <span className="block truncate text-[13px] font-medium">
+                {item.title ?? `会话 #${item.id}`}
+              </span>
               {item.busy || item.queued > 0 ? (
                 <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-secondary">
                   {item.busy ? <span>忙</span> : null}
@@ -102,6 +104,16 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
       )}
     </div>
   )
+}
+
+/** 悬浮提示：标题之外还想知道它是第几号、从哪儿分叉的。 */
+function hintOf(item: ConversationSummary): string {
+  return [
+    `会话 #${item.id}`,
+    item.parent === undefined ? undefined : `从会话 #${item.parent.conversationId} 分叉`,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ")
 }
 
 /** 每层缩进 12px 的固定档位：类名必须是字面量，Tailwind 才扫得到。 */

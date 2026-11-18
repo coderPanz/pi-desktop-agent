@@ -7,6 +7,7 @@
  * 已实现（S3 + S4，见 docs/知识中心/技术方案.md §4.1）：
  *   agent/models.ts        gateway provider + createModelRegistry / pickModel
  *   agent/env.ts           NodeExecutionEnv 工厂
+ *   agent/summarize.ts     侧栏标题：第一条用户消息 + 后台压成 10 字以内
  *   session/manager.ts     会话操作（只返回数据，不打印）
  *   paths.ts               WorkspacePaths（根由调用方注入）
  *   storage/create-storage.ts  文件库 / 内存库
@@ -36,6 +37,14 @@ export {
   type GatewayModel,
 } from "./agent/models.ts"
 export { createNodeEnv, createNodeEnvFactory, type NodeEnvOptions } from "./agent/env.ts"
+export {
+  cleanTitle,
+  clipTitle,
+  countChars,
+  createTitleSummarizer,
+  TITLE_MAX_CHARS,
+  type SummarizeTitle,
+} from "./agent/summarize.ts"
 
 export { SessionManager, defaultQueueModes, DEFAULT_QUEUE_MODE, ROOT_CONVERSATION_ID } from "./session/manager.ts"
 export type {

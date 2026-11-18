@@ -67,7 +67,7 @@ test("审批、工具错误、嵌套调用与排队内容在新视觉层中完�
 })
 
 test("侧栏会话行：折叠箭头、选中区、删除入口并列，运行中/根会话不给删除入口", () => {
-  const item = { id: 7, parent: { conversationId: 1, at: 3 }, busy: false, queued: 0 }
+  const item = { id: 7, parent: { conversationId: 1, at: 3 }, busy: false, queued: 0, title: "部署脚本排查" }
   const actions = { select: noop, delete: noop, toggle: noop }
   const row = renderToStaticMarkup(createElement(ConversationRow, {
     item, active: true, deletable: true, depth: 1, branch: { collapsed: false }, actions,
@@ -76,7 +76,7 @@ test("侧栏会话行：折叠箭头、选中区、删除入口并列，运行�
   assert.match(row, /data-depth="1"/)
   assert.match(row, /aria-label="删除会话 #7"/)
   assert.match(row, /aria-expanded="true"/, "展开态下箭头是 aria-expanded")
-  assert.match(row, /title="从会话 #1 分叉"/, "分叉来源挂 title，行里不重复")
+  assert.match(row, /title="会话 #7 · 从会话 #1 分叉"/, "id 与分叉来源挂在 title 上，行里不重复")
 
   // 按钮不能嵌套：删除按钮必须在选中按钮闭合之后（兄弟关系）
   const selectClosed = row.indexOf("</button>")
@@ -98,9 +98,9 @@ test("侧栏会话行：折叠箭头、选中区、删除入口并列，运行�
 
 test("侧栏树：按分叉关系嵌套，折叠后子会话不再渲染", () => {
   const items = [
-    { id: 1, parent: undefined, busy: false, queued: 0 },
-    { id: 7, parent: { conversationId: 1, at: 2 }, busy: false, queued: 0 },
-    { id: 9, parent: { conversationId: 7, at: 5 }, busy: false, queued: 0 },
+    { id: 1, parent: undefined, busy: false, queued: 0, title: undefined },
+    { id: 7, parent: { conversationId: 1, at: 2 }, busy: false, queued: 0, title: "部署脚本排查" },
+    { id: 9, parent: { conversationId: 7, at: 5 }, busy: false, queued: 0, title: undefined },
   ]
   const actions = { select: noop, delete: noop, toggle: noop }
   const expanded = renderToStaticMarkup(createElement(ConversationTree, {

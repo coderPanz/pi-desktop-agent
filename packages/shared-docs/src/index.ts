@@ -10,6 +10,7 @@
  *   entries.ts    app.ui_action / app.approval  应用条目 kind
  *   workspace.ts  app.workspace   界面侧会话状态（可回卷、按 asOf 分叉）
  *   trash.ts      app.trash       被删除（从列表移除）的会话 id
+ *   title.ts      app.title       侧栏标题（第一条用户消息 / 它的 AI 摘要）
  *
  * 后续（S7–S9，用到再写，现在写就是猜）：app.kb / app.toolbox / app.smartui
  */
@@ -27,3 +28,6 @@ export { AppWorkspaceDoc } from "./workspace.ts"
 
 export type { AppTrash } from "./trash.ts"
 export { AppTrashDoc } from "./trash.ts"
+
+export type { AppTitle } from "./title.ts"
+export { AppTitleDoc } from "./title.ts"

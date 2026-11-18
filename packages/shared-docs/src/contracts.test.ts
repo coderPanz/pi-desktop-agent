@@ -6,6 +6,7 @@ import { isJsonValue } from "@pi/shared-types"
 import { AppApprovalsDoc } from "./approvals.ts"
 import { ApprovalEntry, UiActionEntry } from "./entries.ts"
 import { AppSettingsDoc } from "./settings.ts"
+import { AppTitleDoc } from "./title.ts"
 import { AppTrashDoc } from "./trash.ts"
 import { AppWorkspaceDoc } from "./workspace.ts"
 
@@ -24,6 +25,12 @@ test("文档 kind 与作用域是契约值", () => {
   assert.equal(approvals.scope, "conversation")
   assert.equal(approvals.history, "latest")
   assert.equal(approvals.fork, "current")
+
+  const title = AppTitleDoc.definition
+  assert.equal(title.kind, "app.title")
+  assert.equal(title.version, 1)
+  assert.equal(title.scope, "conversation")
+  assert.equal(title.history, "latest")
 
   const trash = AppTrashDoc.definition
   assert.equal(trash.kind, "app.trash")
@@ -55,6 +62,7 @@ test("初值都是严格 JSON，且不共享引用", () => {
   })
   assert.deepEqual(AppApprovalsDoc.definition.initial(), { pending: [] })
   assert.deepEqual(AppTrashDoc.definition.initial(), { hidden: [] })
+  assert.deepEqual(AppTitleDoc.definition.initial(), { title: "", from: 0 })
 })
 
 test("checkpoint 策略：小改动记增量，攒够一批再落整帧", () => {

@@ -24,6 +24,8 @@ export type PushMap = {
   "host.status": HostStatus
   // 待审批工具的集合，审批完成后会从 pending 中移除
   approval: ApprovalPush
+  // 会话标题：后台摘要生成好了就推一条，列表不用轮询
+  "conv.title": { readonly conversationId: ConversationId; readonly title: string }
 }
 
 // 所有 pushmap key 的联合类型：`view` / `submission` / `host.status` / `approval` 作为推送通道名

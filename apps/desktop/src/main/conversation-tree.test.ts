@@ -12,6 +12,7 @@ function conversation(id: number, parentId?: number): ConversationSummary {
     parent: parentId === undefined ? undefined : { conversationId: parentId, at: 1 },
     busy: false,
     queued: 0,
+    title: undefined,
   }
 }
 

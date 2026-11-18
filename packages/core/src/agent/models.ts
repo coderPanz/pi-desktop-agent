@@ -10,7 +10,8 @@ import {
   envApiKeyAuth,
   InMemoryCredentialStore, // 内存凭证存储
   type Model,
-  type MutableModels, // 多模型集合
+  type Models, // 模型集合（读取侧）
+  type MutableModels, // 多模型集合（可增删 provider）
 } from "@earendil-works/pi-ai"
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy"
 
@@ -91,7 +92,7 @@ export function createModelRegistry(config: GatewayConfig = gatewayConfigFromEnv
 /**
  * 取第一个可用模型
 */
-export async function pickModel(models: MutableModels): Promise<Model<"anthropic-messages">> {
+export async function pickModel(models: Models): Promise<Model<"anthropic-messages">> {
   const available = await models.getAvailable()
   const first = available[0]
   if (first === undefined) throw new ConfigError("没有可用模型：请设置 ANTHROPIC_API_KEY（凭证未解析到时 getAvailable() 返回空数组，不抛错）。",)

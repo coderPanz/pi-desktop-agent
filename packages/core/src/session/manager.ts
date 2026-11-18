@@ -9,8 +9,11 @@
 
 // pi-durable 的 API 都要传 context；这里没特殊需求，默认传 BACKGROUND_CONTEXT 即可
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
+import { EntryKind, messageContentText } from "@pi/shared-types"
 import type { ConversationSummary } from "@pi/shared-types"
 
+import { clipTitle, countChars, TITLE_MAX_CHARS } from "../agent/summarize.ts"
+import type { SummarizeTitle } from "../agent/summarize.ts"
 import { UserError } from "../errors.ts"
 import { latestInputSubmission } from "../harness/submissions.ts"
 import type { Context } from "@earendil-works/chord"
@@ -21,7 +24,7 @@ import {
   LiveDoc,
   ROOT_CONVERSATION_ID,
 } from "@earendil-works/pi-durable"
-import { AppTrashDoc } from "@pi/shared-docs"
+import { AppTitleDoc, AppTrashDoc } from "@pi/shared-docs"
 
 import type { ConversationPurge } from "../storage/purge.ts"
 import type {
@@ -71,6 +74,10 @@ export type SessionManagerOptions = {
   readonly modes?: QueueModes
   /** 物理删除能力；内存库没有，缺省时 `delete()` 退回「从会话列表移除」。 */
   readonly purge?: ConversationPurge
+  /** 长标题的后台摘要；缺省时不摘要，直接截断第一条用户消息。 */
+  readonly summarizeTitle?: SummarizeTitle
+  /** 摘要生成好时通知宿主（界面靠推送更新，不用轮询会话列表）。 */
+  readonly onTitle?: (conversationId: ConversationId, title: string) => void
 }
 
 // 提交选择
@@ -87,6 +94,15 @@ export class SessionManager {
   #conversationId: ConversationId // 当前会话 id
   #modes: QueueModes // 入队策略
   #purge: ConversationPurge | undefined // 物理删除（文件库才有）
+  #summarizeTitle: SummarizeTitle | undefined // 长标题的后台摘要
+  #onTitle: SessionManagerOptions["onTitle"] // 摘要就绪的回调
+  /** 正在/已经跑过摘要的会话（按「哪条条目」去重，避免每次列表都再问一次模型）。 */
+  #titles = new Map<ConversationId, { readonly from: EntryId; readonly state: "running" | "failed" }>()
+  /**
+   * 第一条用户消息的缓存：一条会话的第一条用户消息写进去就不会再变（重置也不删历史），
+   * 所以命中一次就能一直用，列表不必每次回头翻条目。
+   */
+  #firstUser = new Map<ConversationId, { readonly entryId: EntryId; readonly text: string }>()
   #watches = new Map<ConversationId, ConversationWatch>() // 会话订阅映射
 
   private constructor(
@@ -98,6 +114,8 @@ export class SessionManager {
     this.#conversationId = conversationId
     this.#modes = options.modes ?? defaultQueueModes()
     this.#purge = options.purge
+    this.#summarizeTitle = options.summarizeTitle
+    this.#onTitle = options.onTitle
   }
 
   /**
@@ -172,6 +190,7 @@ export class SessionManager {
           parent: record.parent,
           busy: await this.isBusy(record.id, context),
           queued: (await this.#inboxItems(record.id, context)).length,
+          title: await this.#title(record.id, context),
         })),
     )
   }
@@ -426,6 +445,79 @@ export class SessionManager {
     )
     if (conversation === undefined) throw new UserError(`会话不存在：${String(this.#conversationId)}`)
     return conversation
+  }
+
+  /**
+   * 侧栏标题：第一条用户消息。
+   *
+   * - 不超过 10 字：直接用原文；
+   * - 超过 10 字：先返回截断的原文顶着，同时后台问一次模型压成 10 字以内，写好 `app.title` 后
+   *   用 `onTitle` 推给界面（同一个会话 + 同一条条目只问一次）；
+   * - 已经存过摘要（`from` 对得上）：直接用，不再问。
+   */
+  async #title(conversationId: ConversationId, context: Context): Promise<string | undefined> {
+    const first = await this.#firstUserText(conversationId, context)
+    if (first === undefined) return undefined
+
+    const stored = await this.#harness.snapshot(AppTitleDoc, conversationId, context)
+    if (stored !== undefined && stored.from === first.entryId && stored.title !== "") return stored.title
+
+    const clipped = clipTitle(first.text)
+    if (countChars(first.text) <= TITLE_MAX_CHARS) return clipped
+
+    const job = this.#titles.get(conversationId)
+    if (job === undefined || job.from !== first.entryId) {
+      this.#titles.set(conversationId, { from: first.entryId, state: "running" })
+      void this.#summarize(conversationId, first)
+    }
+    return clipped
+  }
+
+  /** 后台摘要：成功就落盘 + 通知宿主；失败只记一笔，别每次列会话都重试一遍。 */
+  async #summarize(
+    conversationId: ConversationId,
+    first: { readonly entryId: EntryId; readonly text: string },
+  ): Promise<void> {
+    const summarize = this.#summarizeTitle
+    if (summarize === undefined) return
+    const title = await summarize(first.text)
+    if (title === undefined) {
+      this.#titles.set(conversationId, { from: first.entryId, state: "failed" })
+      return
+    }
+    try {
+      await this.#harness.commit(async tx => {
+        const doc = await tx.doc(AppTitleDoc, conversationId)
+        doc.title = title
+        doc.from = first.entryId as number
+      }, BACKGROUND_CONTEXT)
+    } catch {
+      // 会话在摘要期间被删掉/库已关：标题没了不影响任何东西
+      this.#titles.delete(conversationId)
+      return
+    }
+    this.#onTitle?.(conversationId, title)
+  }
+
+  /** 会话里第一条有文字的用户消息（沿 fork 祖先链找，和界面看到的顺序一致）。 */
+  async #firstUserText(
+    conversationId: ConversationId,
+    context: Context,
+  ): Promise<{ readonly entryId: EntryId; readonly text: string } | undefined> {
+    const cached = this.#firstUser.get(conversationId)
+    if (cached !== undefined) return cached
+    const conversation = await this.#harness.conversation(conversationId, context)
+    if (conversation === undefined) return undefined
+    const page = await conversation.entries({ order: "ascending" }, 20, undefined, context)
+    for (const entry of page.items) {
+      if (entry.kind !== EntryKind.user) continue
+      const text = (entry.model ?? []).map(message => messageContentText(message)).join("").trim()
+      if (text === "") continue
+      const found = { entryId: entry.id, text }
+      this.#firstUser.set(conversationId, found)
+      return found
+    }
+    return undefined
   }
 
   /** 获取排队项 */
