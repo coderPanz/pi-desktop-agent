@@ -105,8 +105,11 @@ test("真实 Markdown 渲染：标题/列表/表格逐词进场，代码块与�
   }))
   for (const tag of ["<h2>", "<ul", "<table", "<pre"]) assert.ok(live.includes(tag), `${tag} 应照常渲染`)
   assert.match(live, /<span class="pi-stream-token pi-stream-word" style="animation-delay:0ms">标<\/span><span class="pi-stream-token pi-stream-word" style="animation-delay:0ms">题<\/span>/)
-  assert.match(live, /<code class="language-ts">const a = 1/)
-  assert.ok(!live.includes('class="pi-stream-token pi-stream-word" style="animation-delay:0ms">const'))
+  // 代码块交给 Shiki 上色，但整块不参与逐词进场
+  assert.match(live, /<code class="language-ts">/)
+  assert.ok(live.includes("color:"), "代码块应带高亮")
+  const codeBlock = live.slice(live.indexOf("<pre"), live.indexOf("</pre>"))
+  assert.ok(!codeBlock.includes(REVEAL_TOKEN_CLASS), "代码块里不套进场 span")
 
   const settled = renderToStaticMarkup(createElement(MarkdownText, { text: "你好 world", reveal: { settledBefore: 999, delayFor: () => 0 } }))
   assert.ok(!settled.includes(REVEAL_WORD_CLASS), "整段落定后不再有动画类")

@@ -49,6 +49,19 @@
   有未结束任务时拒绝且一行不删；根会话与有子会话的会话拒绝、子会话删掉后父会话可删；删掉最大会话后
   新会话 id 继续增大、计数器不变。内存库那条仍验「退回列表移除 + 重复删除幂等」
 
+- 聊天里的代码块接入语法高亮（`shiki@4.6.0`）：`lib/highlight.ts` 用 `createHighlighterCoreSync` +
+  `createJavaScriptRegexEngine` 建单例（不用 Oniguruma 的 wasm，CSP 不需要开 `'wasm-unsafe-eval'`），
+  装了 ts/tsx/js/jsx/json/bash/python/html/css/yaml/markdown/diff，`sh`/`shell`/`yml`/`md` 等别名落到同一套语法，
+  结果按 `(lang, code)` 缓存最近 64 条；不认识的语言原样渲染
+- `lib/codeHighlight.ts`：rehype 插件只换 `pre > code` 的内容，保留我们自己的 `pre`（圆角、浅灰底、滚动），
+  Shiki 的 `pre` 自带背景色会被丢；文本末尾停在未闭合围栏时跳过最后一块（流式每 32ms 重分词会烧 CPU），闭合即上色
+- `components/CodeBlock.tsx`：代码块外壳——左上语言标签、右上复制（取渲染后 `textContent`，换行缩进不走样）、
+  1.5s 后回到「复制」；`Markdown.tsx` 的 `pre` 覆盖改用它，`pre` 的上下间距移交外壳
+- 修 `rehypeStreamReveal` 的老 bug：`plain`（代码块不进场）原来只看当前节点，高亮后的
+  `pre > code > span.line > span` 会被再切一遍词；现在整棵子树继承
+- 回归：语言/别名可高亮、未知语言不高亮、缓存命中、闭合块带标签与颜色、无标签块显示 `text`、
+  流式中最后一块不上色而闭合后上色、代码块里不出现进场 span
+
 ### 变更
 
 - 会话区滚动改为「贴底跟随」（`useStickToBottom`）：只有用户本来就在底部时才跟着流式内容走，往上翻就保持不动，

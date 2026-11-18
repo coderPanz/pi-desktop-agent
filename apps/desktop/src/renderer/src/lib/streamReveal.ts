@@ -96,10 +96,14 @@ export function rehypeStreamReveal(reveal: StreamReveal) {
   }
 }
 
-function walk(node: HastNode, state: WalkState): void {
+/**
+ * `plain` 要整棵子树继承：高亮之后的代码块是 `pre > code > span.line > span`，
+ * 只看当前节点的 tagName 会把里面的 span 当普通文字切一遍。
+ */
+function walk(node: HastNode, state: WalkState, inheritedPlain = false): void {
   const children = node.children
   if (children === undefined) return
-  const plain = node.type === "element" && node.tagName !== undefined && CODE_TAGS.has(node.tagName)
+  const plain = inheritedPlain || (node.type === "element" && node.tagName !== undefined && CODE_TAGS.has(node.tagName))
   const next: HastNode[] = []
   for (const child of children) {
     if (child.type === "text" && typeof child.value === "string") {
@@ -111,7 +115,7 @@ function walk(node: HastNode, state: WalkState): void {
       next.push(...words(child.value, state))
       continue
     }
-    walk(child, state)
+    walk(child, state, plain)
     next.push(child)
   }
   node.children = next

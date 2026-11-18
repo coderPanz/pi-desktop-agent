@@ -97,9 +97,10 @@ details[open] > summary .pi-disclosure { transform: rotate(90deg); }
 .pi-markdown h2 { @apply mt-6 mb-3 text-[19px] leading-snug font-semibold tracking-tight; }
 .pi-markdown h3 { @apply mt-5 mb-2 text-[16px] font-semibold; }
 .pi-markdown h4, .pi-markdown h5, .pi-markdown h6 { @apply mt-4 mb-2 text-[14px] font-semibold; }
-.pi-markdown p, .pi-markdown ul, .pi-markdown ol, .pi-markdown blockquote, .pi-markdown pre { @apply my-3; }
-.pi-markdown :not(pre) > code { @apply rounded-md bg-subtle px-1.5 py-0.5 font-mono text-[12px] text-primary; }
-.pi-markdown pre code { @apply block bg-transparent p-0 font-mono text-[12px] leading-6; }
+/* `pre` 的上下间距归代码块外壳（CodeBlock）管，避免边框与 margin 叠在一起 */
+.pi-markdown p, .pi-markdown ul, .pi-markdown ol, .pi-markdown blockquote { @apply my-3; }
+.pi-markdown :not(pre) > code { @apply rounded-md bg-subtle px-1.5 py-0.5 font-mono text-[13px] text-primary; }
+.pi-markdown pre code { @apply block bg-transparent p-0 font-mono text-[13px] leading-5; }
 .pi-markdown blockquote { @apply border-l-2 border-control-border pl-4 text-secondary; }
 .pi-markdown hr { @apply my-6 border-divider; }
 .pi-markdown img { @apply max-w-full rounded-xl; }
