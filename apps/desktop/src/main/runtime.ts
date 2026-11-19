@@ -23,6 +23,8 @@ import {
   IpcRouter,
   materializeSubmission,
   PROVIDER_ID,
+  sandboxModeFromEnv,
+  sandboxNetworkFromEnv,
   SessionManager,
   summarizeRegistry,
   workspacePaths,
@@ -136,6 +138,7 @@ export class DesktopRuntime {
       storage,
       registry,
       models: resolveModels,
+      // 创建了 node 环境，用于执行 bash 命令
       env: createNodeEnvFactory({ workspace: paths.workspace }),
       settings: () => ({ progress: { partialIntervalMs: 100 } }),
       ...initialAgent(),
@@ -212,6 +215,8 @@ export class DesktopRuntime {
     log("runtime ready", {
       conversationId: manager.conversationId,
       dataDir: paths.root,
+      // 排障：命令被拦时先看这一行（PI_SANDBOX / PI_SANDBOX_NET）
+      sandbox: `${sandboxModeFromEnv()}/${sandboxNetworkFromEnv()}`,
     })
 
     return new DesktopRuntime({

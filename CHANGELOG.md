@@ -75,6 +75,18 @@
   短消息不调模型、长消息先截断再摘要并推送、摘要落盘后列表直接用且不重复调用、摘要失败只记一次、
   没有用户消息的会话没有标题
 
+- `bash` 接入内核沙箱（macOS Seatbelt）：新增 `agent/sandbox.ts` 包住 `ExecutionEnv.exec`——
+  字符串命令拼成 `sandbox-exec -D WS=<realpath> -D TMP=<tmpdir> -f profile <shell> -lc <cmd>` 的 argv 交给内层
+  `NodeExecutionEnv`（超时/cwd/spill/kill/abort 全沿用 SDK）；策略 `(deny file-write*)` 打底、只放开工作区与临时目录，
+  `(deny network*)` 默认拒网；profile 走 `-D` 参数而不是字符串拼接（防路径注入），落盘 0600 并在 `cleanup()` 删除
+- 开关与失败策略：`PI_SANDBOX=seatbelt|off`（macOS 默认 seatbelt，其它平台默认 off）、`PI_SANDBOX_NET=allow|deny`（默认 deny）；
+  `sandbox-exec` 缺失或 profile 写不出来时**直接报错拒绝执行**，不静默降级；启动日志（debug）打印 `sandbox mode/network`
+- 回归（真文件系统、真子进程，非 macOS 跳过）：工作区内可写、工作区外被拒、软链绕过被拒、改 `~/.zshrc` 被拒、
+  `sh -c 'sh -c …'` 与 argv 形式同样受限、网络被拒、`prepareSandbox` 的 profile 权限与清理、
+  `createNodeEnvFactory`（Harness 实际使用的工厂）接线生效、`PI_SANDBOX=off` 确实还原无沙箱
+- README「工具与审批」「已知限制」、技术方案安全边界一节按实际边界重写（读不拦、TMPDIR 可写、不防工作区内破坏）
+- 新增 `docs/沙箱方案.md`：内核沙箱怎么起作用、实测结果、Phase 2（tools worker，让文件工具也进内核边界）的设计与代价
+
 ### 变更
 
 - 会话区滚动改为「贴底跟随」（`useStickToBottom`）：只有用户本来就在底部时才跟着流式内容走，往上翻就保持不动，

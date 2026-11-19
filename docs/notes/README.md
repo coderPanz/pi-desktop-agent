@@ -4,7 +4,7 @@
 
 写入规则见 [AGENT.md §10](../../AGENT.md)。
 
-- 按主题分目录：`durable/`（pi-durable 行为）、`Electron/`、`SQLite笔记/`、`node/`。
+- 按主题分目录：`durable/`（pi-durable 行为）、`Electron/`、`React/`、`SQLite笔记/`、`node/`、`沙箱安全/`。
 - 文件命名：`<序号>. <中文标题>.md`，标题即主题。
 - 一篇一个结论，开篇先给结论，再给依据与来源文件。
 - 这里不放长篇教程、不放学习路线与工期、不放踩坑日记、不放代码实现细节（那些写源码注释）。

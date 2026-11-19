@@ -58,7 +58,13 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 
 模型能用的工具：`read`、`list_dir`、`write`、`edit`、`bash`。
 
-工作区（`<数据根>/workspace`）是工具的根目录：相对路径按它解析，`read`/`list_dir`/`write`/`edit` 的路径必须落在它里面（越界路径与指向外面的软链一律拒绝），`bash` 的起点 cwd 也是它。但这不是沙箱：`bash` 里 `cd ..` 能碰到外面，那一步靠审批。
+工作区（`<数据根>/workspace`）是工具的根目录：相对路径按它解析，`read`/`list_dir`/`write`/`edit` 的路径必须落在它里面（越界路径与指向外面的软链一律拒绝），`bash` 的起点 cwd 也是它。
+
+`bash` 再叠一层**内核沙箱**（macOS Seatbelt，`packages/core/src/agent/sandbox.ts`）：命令的整棵进程树都跑在
+`sandbox-exec` 的策略下——写只允许工作区与临时目录，网络默认拒绝，`cd ..` 后再写、`sh -c 'sh -c …'`、
+通过软链绕出去都会被内核拒掉（`Operation not permitted`）。开关：`PI_SANDBOX=seatbelt|off`（macOS 默认开）、
+`PI_SANDBOX_NET=allow`（默认 deny）。沙箱不可用（缺 `sandbox-exec`）时**拒绝执行 bash**，不静默降级。
+方案与边界见 [`docs/沙箱方案.md`](docs/沙箱方案.md)。
 
 审批分三档：
 
@@ -197,6 +203,10 @@ cd apps/desktop/node_modules/electron && node install.js
 - 宿主尚未监听 `HarnessHost.closed` 的存储失败结果，界面没有完整的不可用/恢复状态。
 - 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
   实测 `InMemoryCredentialStore is not a constructor`）；打包时需要确认 electron-builder 带上这些依赖。
-- `bash` 本身可以 `cd` 到工作区外（边界检查只管 cwd 的起点），靠审批阑住；V1 不宣称沙箱。
+- `bash` 的沙箱只管**写**与**网络**：读仍是全局的（`cat ~/.ssh/id_rsa` 不在拦截范围），要挡需要额外的读规则；
+  临时目录（`$TMPDIR`）对沙箱内可写；沙箱也不防「工作区内被破坏」（`rm -rf .`），那属于审批 + 版本控制。
+- 沙箱用的是 Apple 的 **deprecated API** `sandbox-exec`（macOS 26.2 实测可用）：将来被移除后需要走容器/VM 路线
+  （`docs/沙箱方案.md` §3）。进程内文件工具（`write`/`edit`）走的是应用层路径边界，不在内核沙箱里
+  （理由与 Phase 2 的 tools worker 计划见同一文档）。
 - `pnpm package` 从未跑过；Electron 打包后 `node:sqlite` 的 ABI 与 asar 内动态 import 都未验证。
 - V1 不做：多窗口写同一会话、云端同步、多进程打开同一 SQLite、插件市场、移动端。

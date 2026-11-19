@@ -8,6 +8,7 @@
  *   agent/models.ts        gateway provider + createModelRegistry / pickModel
  *   agent/env.ts           NodeExecutionEnv 工厂
  *   agent/summarize.ts     侧栏标题：第一条用户消息 + 后台压成 10 字以内
+ *   agent/sandbox.ts       bash 沙箱（macOS Seatbelt：写=仅工作区、网络可关）
  *   session/manager.ts     会话操作（只返回数据，不打印）
  *   paths.ts               WorkspacePaths（根由调用方注入）
  *   storage/create-storage.ts  文件库 / 内存库
@@ -37,6 +38,14 @@ export {
   type GatewayModel,
 } from "./agent/models.ts"
 export { createNodeEnv, createNodeEnvFactory, type NodeEnvOptions } from "./agent/env.ts"
+export {
+  sandboxModeFromEnv,
+  sandboxNetworkFromEnv,
+  SANDBOX_EXEC,
+  seatbeltAvailable,
+  type SandboxMode,
+  type SandboxNetwork,
+} from "./agent/sandbox.ts"
 export {
   cleanTitle,
   clipTitle,

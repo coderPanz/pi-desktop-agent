@@ -40,12 +40,13 @@ async function canonicalAncestor(
 export function createPathGuard(workspace: string): PathGuard {
   const roots = new Map<string, string>()
 
+  // 拿到工作区 【根真实路径】并缓存起来，后续供 请求路径是否在工作区 的判断 场景
   const canonicalRoot = async (env: ExecutionEnv, context: Context): Promise<string | undefined> => {
     const key = `${env.id}\u0000${workspace}`
     const cached = roots.get(key)
     if (cached !== undefined) return cached
+    // 获取工作区的真实路径
     const canonical = await env.canonicalPath(workspace, context)
-    // 根还不存在（`--memory` 下第一次写）时不缓存：等它出现再归一化。
     if (!canonical.ok) return undefined
     roots.set(key, canonical.value)
     return canonical.value

@@ -18,6 +18,8 @@ import {
   ConfigError,
   createModelRegistry,
   createNodeEnvFactory,
+  sandboxModeFromEnv,
+  sandboxNetworkFromEnv,
   createPiRegistry,
   createStorage,
   ensureWorkspacePaths,
@@ -84,6 +86,8 @@ async function main(argv: readonly string[]): Promise<number> {
 
   // 装的是什么扩展与工具：`PI_LOG_LEVEL=debug` 时打一行，验「工具真的注册上了」看这里。
   logDebug("registry", summarizeRegistry(registry.snapshot()))
+  // 命令被沙箱拦了先看这一行：模式 / 网络策略（PI_SANDBOX、PI_SANDBOX_NET）
+  logDebug("sandbox", { mode: sandboxModeFromEnv(), network: sandboxNetworkFromEnv() })
 
   let models: ReturnType<typeof createModelRegistry> | undefined
   const resolveModels = () => (models ??= createModelRegistry())
@@ -96,6 +100,7 @@ async function main(argv: readonly string[]): Promise<number> {
     storage,
     registry,
     models: resolveModels,
+    // 创建带 macos 沙箱安全的 node 执行环境用于执行 bash 命令
     env: createNodeEnvFactory({ workspace: paths.workspace }),
     settings: () => ({
       progress: { partialIntervalMs: args.partialIntervalMs ?? DEFAULT_PARTIAL_INTERVAL_MS },
