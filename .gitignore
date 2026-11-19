@@ -19,3 +19,4 @@ local-docs/
 .DS_Store
 *.log
 *.tgz
+docs/
