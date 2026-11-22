@@ -3,6 +3,7 @@ import { useRef, useState } from "react"
 import type { ConversationId, ConversationSummary } from "@pi/shared-types"
 
 import { relativeTime } from "../lib/time.ts"
+import { ConversationDeleteCard } from "./ConversationDeleteCard.tsx"
 import { ConversationMenu } from "./ConversationMenu.tsx"
 import { Icon } from "./Icon.tsx"
 
@@ -33,11 +34,13 @@ export type ConversationRowProps = {
 
 /**
  * 树的每一行：折叠箭头 + 选中区 + 「…」菜单并列（按钮不能嵌套）。
- * 菜单里是删除（二次确认）/ 置顶 / 重命名；重命名在行内变成输入框，Enter 保存、Esc 取消、点别处保存。
+ * 菜单里是删除（浮层二次确认）/ 置顶 / 重命名；重命名在行内变成输入框，Enter 保存、Esc 取消、点别处保存。
  */
 export function ConversationRow({ item, active, deletable, depth, branch, actions, now }: ConversationRowProps) {
-  const [confirming, setConfirming] = useState(false)
+  // 删除确认浮层贴着的那一行（行在滚动/重排后位置会失效，所以收起而不是跟随重算）
+  const [confirmAt, setConfirmAt] = useState<DOMRect | undefined>(undefined)
   const [renaming, setRenaming] = useState(false)
+  const row = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<DOMRect | undefined>(undefined)
   const input = useRef<HTMLInputElement>(null)
   // Esc 取消时输入框卸载也会触发 blur，用这个标记跳过那一次提交
@@ -52,7 +55,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
   }
 
   return (
-    <div className={`group flex items-start gap-0.5 rounded-lg ${INDENT[depth] ?? INDENT[INDENT.length - 1]} ${active ? "bg-selection" : "hover:bg-hover"}`}>
+    <div ref={row} className={`group flex items-start gap-0.5 rounded-lg ${INDENT[depth] ?? INDENT[INDENT.length - 1]} ${active ? "bg-selection" : "hover:bg-hover"}`}>
       {branch === undefined ? (
         <span className="w-5 shrink-0" aria-hidden="true" />
       ) : (
@@ -97,26 +100,6 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
             }}
           />
         </form>
-      ) : confirming ? (
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-2.5 pr-3">
-          <span className="truncate text-[12px] text-secondary">删除 #{item.id}？</span>
-          <button
-            className="rounded-md bg-danger-soft px-2 py-1 text-[12px] font-medium text-danger hover:bg-danger/15"
-            title="从库里彻底删除，不可恢复"
-            onClick={() => {
-              setConfirming(false)
-              actions.delete(item.id)
-            }}
-          >
-            删除
-          </button>
-          <button
-            className="rounded-md px-2 py-1 text-[12px] text-secondary hover:bg-hover hover:text-primary"
-            onClick={() => setConfirming(false)}
-          >
-            取消
-          </button>
-        </div>
       ) : (
         <>
           <button
@@ -171,6 +154,17 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
         </>
       )}
 
+      {confirmAt === undefined ? null : (
+        <ConversationDeleteCard
+          anchor={confirmAt}
+          onCancel={() => setConfirmAt(undefined)}
+          onConfirm={() => {
+            setConfirmAt(undefined)
+            actions.delete(item.id)
+          }}
+        />
+      )}
+
       {menu === undefined ? null : (
         <ConversationMenu
           anchor={menu}
@@ -179,7 +173,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
           onClose={() => setMenu(undefined)}
           onDelete={() => {
             setMenu(undefined)
-            setConfirming(true)
+            setConfirmAt(row.current?.getBoundingClientRect())
           }}
           onPin={() => {
             setMenu(undefined)
