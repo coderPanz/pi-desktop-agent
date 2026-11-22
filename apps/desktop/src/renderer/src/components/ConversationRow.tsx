@@ -157,7 +157,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
             aria-haspopup="menu"
             aria-expanded={menu !== undefined}
             title="删除 / 置顶 / 重命名"
-            className={`mt-1 mr-1 rounded-md p-1.5 text-tertiary hover:bg-hover hover:text-primary focus-visible:opacity-100 ${menu === undefined ? "opacity-0 group-hover:opacity-100" : "bg-hover opacity-100"}`}
+            className={`mt-0.5 mr-1 rounded-md p-1.5 text-secondary hover:bg-hover hover:text-primary focus-visible:opacity-100 ${menu === undefined ? "opacity-0 group-hover:opacity-100" : "bg-hover opacity-100"}`}
             onClick={(event) => {
               if (menu !== undefined) {
                 setMenu(undefined)
@@ -166,7 +166,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
               setMenu(event.currentTarget.getBoundingClientRect())
             }}
           >
-            <Icon name="more" className="size-4" />
+            <Icon name="more" className="size-5" strokeWidth={2.8} />
           </button>
         </>
       )}

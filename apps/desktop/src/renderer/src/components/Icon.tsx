@@ -22,10 +22,13 @@ const PATHS: Record<IconName, string> = {
   pencil: "M4 20h4l10-10-4-4L4 16v4z M14 6l4 4",
 }
 
-/** 本地描边图标，不引入字体或远程资源；可交互控件的名称由外层文字/aria-label 提供。 */
-export function Icon({ name, className = "" }: { readonly name: IconName; readonly className?: string }) {
+/**
+ * 本地描边图标，不引入字体或远程资源；可交互控件的名称由外层文字/aria-label 提供。
+ * `strokeWidth` 只给「用圆点画图」的图标（如 `more`）加粗用：圆点的直径就是描边宽度。
+ */
+export function Icon({ name, className = "", strokeWidth = 1.65 }: { readonly name: IconName; readonly className?: string; readonly strokeWidth?: number }) {
   return (
-    <svg className={`size-4 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className={`size-4 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={PATHS[name]} />
     </svg>
   )
