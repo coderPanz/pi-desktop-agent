@@ -146,6 +146,8 @@ export class IpcRouter {
           },
           context,
         )
+        // 一提交就算「开始」：侧栏据此把这个会话从草稿带进「最近」，并按活跃时间排在前面
+        await this.#manager.touch(id, context)
         return { submissionId: submission.id } as IpcResponse<K>
       }
 
@@ -170,7 +172,25 @@ export class IpcRouter {
           { ownership: { kind: "ownerless" } },
           context,
         ) // 开始分叉
+        // 新会话继承父会话的时间节点，这里改写成「现在」：分叉出来就是一条新近的会话
+        await this.#manager.touch(forked.id, context)
         return { conversationId: forked.id } as IpcResponse<K> // 返回分叉会话 id
+      }
+
+      // 重命名：写会话标题（`app.title`），界面重拉列表后看到新名字
+      case "conv.rename": {
+        const id = conversationIdOf(input)
+        const title = requiredText(input, "title")
+        const renamed = await this.#manager.rename(id, title, context)
+        return { title: renamed } as IpcResponse<K>
+      }
+
+      // 置顶 / 取消置顶：只改「最近」的排序偏好
+      case "conv.pin": {
+        const id = conversationIdOf(input)
+        const pinned = requiredBoolean(input, "pinned")
+        await this.#manager.pin(id, pinned, context)
+        return {} as IpcResponse<K>
       }
 
       // 重置会话

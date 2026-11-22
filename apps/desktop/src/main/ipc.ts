@@ -21,6 +21,8 @@ const CHANNEL_LIST = [
   "conv.abort", // 中断该会话
   "conv.fork", // 分叉
   "conv.delete", // 删除会话-从列表移除
+  "conv.rename", // 重命名-写会话标题
+  "conv.pin", // 置顶 / 取消置顶
   "conv.reset", // 重置上下文-不删历史
   "conv.compact", // 压缩上下文-返回摘要条目 id
   "doc.get", // 读一份 `app.*` 文档的当前值

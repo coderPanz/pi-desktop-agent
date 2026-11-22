@@ -66,45 +66,54 @@ test("审批、工具错误、嵌套调用与排队内容在新视觉层中完�
   assert.ok(queued.includes("QUEUED_INPUT"))
 })
 
-test("侧栏会话行：折叠箭头、选中区、删除入口并列，运行中/根会话不给删除入口", () => {
-  const item = { id: 7, parent: { conversationId: 1, at: 3 }, busy: false, queued: 0, title: "部署脚本排查" }
-  const actions = { select: noop, delete: noop, toggle: noop }
+test("侧栏会话行：折叠箭头、选中区、「…」菜单并列，行右侧有时间节点", () => {
+  const item = { id: 7, parent: { conversationId: 1, at: 3 }, busy: false, queued: 0, title: "部署脚本排查", pinned: false, updatedAt: 1_700_000_000_000 }
+  const actions = { select: noop, delete: noop, rename: noop, pin: noop, toggle: noop }
   const row = renderToStaticMarkup(createElement(ConversationRow, {
-    item, active: true, deletable: true, depth: 1, branch: { collapsed: false }, actions,
+    item, active: true, deletable: true, depth: 1, branch: { collapsed: false }, actions, now: item.updatedAt,
   }))
   assert.match(row, /data-conversation-id="7"/)
   assert.match(row, /data-depth="1"/)
-  assert.match(row, /aria-label="删除会话 #7"/)
+  assert.match(row, /aria-label="会话 #7 的操作"/, "行尾是「…」菜单，不是垃圾桶")
+  assert.match(row, /aria-haspopup="menu"/)
   assert.match(row, /aria-expanded="true"/, "展开态下箭头是 aria-expanded")
   assert.match(row, /title="会话 #7 · 从会话 #1 分叉"/, "id 与分叉来源挂在 title 上，行里不重复")
+  assert.ok(row.includes("刚刚"), "行右侧显示时间节点")
+  assert.ok(!row.includes("menuitem"), "菜单点开才渲染")
 
-  // 按钮不能嵌套：删除按钮必须在选中按钮闭合之后（兄弟关系）
+  // 按钮不能嵌套：菜单按钮必须在选中按钮闭合之后（兄弟关系）
   const selectClosed = row.indexOf("</button>")
-  const deleteAt = row.indexOf('aria-label="删除会话 #7"')
-  assert.ok(selectClosed > 0 && deleteAt > selectClosed, "删除按钮应与选中按钮并列，不能嵌套")
+  const menuAt = row.indexOf('aria-label="会话 #7 的操作"')
+  assert.ok(selectClosed > 0 && menuAt > selectClosed, "菜单按钮应与选中按钮并列，不能嵌套")
 
   const leaf = renderToStaticMarkup(createElement(ConversationRow, {
-    item, active: false, deletable: true, depth: 0, branch: undefined, actions,
+    item, active: false, deletable: true, depth: 0, branch: undefined, actions, now: item.updatedAt,
   }))
-  assert.ok(!leaf.includes("aria-expanded"), "没有子会话的行不画折叠箭头")
+  assert.ok(!leaf.includes("折叠会话 #7 的子会话"), "没有子会话的行不画折叠箭头")
+  assert.match(leaf, /aria-expanded="false"/, "菜单收起时 aria-expanded 是 false")
+
+  // 置顶的行带 pin 图标；忙的行仍然有「…」菜单（只是删除项禁用）
+  const pinned = renderToStaticMarkup(createElement(ConversationRow, {
+    item: { ...item, pinned: true }, active: false, deletable: true, depth: 0, branch: undefined, actions, now: item.updatedAt,
+  }))
+  assert.match(pinned, /<path d="M9 3h6 /, "置顶的行显示图钉")
 
   const busy = renderToStaticMarkup(createElement(ConversationRow, {
-    item: { ...item, busy: true, queued: 2 }, active: false, deletable: false, depth: 0, branch: { collapsed: true }, actions,
+    item: { ...item, busy: true, queued: 2 }, active: false, deletable: false, depth: 0, branch: { collapsed: true }, actions, now: item.updatedAt,
   }))
-  assert.ok(!busy.includes("删除会话 #7"), "忙或根会话没有删除入口")
   assert.match(busy, /aria-expanded="false"/)
   assert.ok(busy.includes("忙") && busy.includes("排队 2"))
 })
 
 test("侧栏树：按分叉关系嵌套，折叠后子会话不再渲染", () => {
   const items = [
-    { id: 1, parent: undefined, busy: false, queued: 0, title: undefined },
-    { id: 7, parent: { conversationId: 1, at: 2 }, busy: false, queued: 0, title: "部署脚本排查" },
-    { id: 9, parent: { conversationId: 7, at: 5 }, busy: false, queued: 0, title: undefined },
+    { id: 1, parent: undefined, busy: false, queued: 0, title: undefined, pinned: false, updatedAt: undefined },
+    { id: 7, parent: { conversationId: 1, at: 2 }, busy: false, queued: 0, title: "部署脚本排查", pinned: false, updatedAt: 1_700_000_000_000 },
+    { id: 9, parent: { conversationId: 7, at: 5 }, busy: false, queued: 0, title: undefined, pinned: false, updatedAt: undefined },
   ]
-  const actions = { select: noop, delete: noop, toggle: noop }
+  const actions = { select: noop, delete: noop, rename: noop, pin: noop, toggle: noop }
   const expanded = renderToStaticMarkup(createElement(ConversationTree, {
-    items, selected: 9, collapsed: new Set<number>(), rootId: 1, actions,
+    items, selected: 9, collapsed: new Set<number>(), rootId: 1, actions, now: 1_700_000_000_000,
   }))
   assert.match(expanded, /data-depth="0"/)
   assert.match(expanded, /data-depth="1"/)
@@ -112,7 +121,7 @@ test("侧栏树：按分叉关系嵌套，折叠后子会话不再渲染", () =>
   assert.ok(!expanded.includes("删除会话 #1"), "根会话不可删除")
 
   const folded = renderToStaticMarkup(createElement(ConversationTree, {
-    items, selected: 1, collapsed: new Set([1]), rootId: 1, actions,
+    items, selected: 1, collapsed: new Set([1]), rootId: 1, actions, now: 1_700_000_000_000,
   }))
   assert.ok(!folded.includes('data-conversation-id="7"'), "折叠父会话后子会话不渲染")
   assert.ok(!folded.includes('data-depth="1"'))

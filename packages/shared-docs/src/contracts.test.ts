@@ -3,8 +3,10 @@ import { test } from "node:test"
 
 import { isJsonValue } from "@pi/shared-types"
 
+import { AppActivityDoc } from "./activity.ts"
 import { AppApprovalsDoc } from "./approvals.ts"
 import { ApprovalEntry, UiActionEntry } from "./entries.ts"
+import { AppPinsDoc } from "./pins.ts"
 import { AppSettingsDoc } from "./settings.ts"
 import { AppTitleDoc } from "./title.ts"
 import { AppTrashDoc } from "./trash.ts"
@@ -32,10 +34,22 @@ test("文档 kind 与作用域是契约值", () => {
   assert.equal(title.scope, "conversation")
   assert.equal(title.history, "latest")
 
+  const activity = AppActivityDoc.definition
+  assert.equal(activity.kind, "app.activity")
+  assert.equal(activity.version, 1)
+  assert.equal(activity.scope, "conversation")
+  assert.equal(activity.history, "latest")
+  assert.equal(activity.fork, "current")
+
   const trash = AppTrashDoc.definition
   assert.equal(trash.kind, "app.trash")
   assert.equal(trash.version, 1)
   assert.equal(trash.scope, "session")
+
+  const pins = AppPinsDoc.definition
+  assert.equal(pins.kind, "app.pins")
+  assert.equal(pins.version, 1)
+  assert.equal(pins.scope, "session")
 
   const workspace = AppWorkspaceDoc.definition
   assert.equal(workspace.kind, "app.workspace")
@@ -63,6 +77,8 @@ test("初值都是严格 JSON，且不共享引用", () => {
   assert.deepEqual(AppApprovalsDoc.definition.initial(), { pending: [] })
   assert.deepEqual(AppTrashDoc.definition.initial(), { hidden: [] })
   assert.deepEqual(AppTitleDoc.definition.initial(), { title: "", from: 0 })
+  assert.deepEqual(AppActivityDoc.definition.initial(), { at: 0 })
+  assert.deepEqual(AppPinsDoc.definition.initial(), { pinned: [] })
 })
 
 test("checkpoint 策略：小改动记增量，攒够一批再落整帧", () => {

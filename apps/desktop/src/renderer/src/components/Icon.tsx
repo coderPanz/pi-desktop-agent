@@ -1,4 +1,4 @@
-type IconName = "sparkles" | "message" | "plus" | "branch" | "compress" | "reset" | "arrow-up" | "stop" | "check" | "chevron" | "tool" | "shield" | "alert" | "model" | "refresh" | "trash"
+type IconName = "sparkles" | "message" | "plus" | "branch" | "compress" | "reset" | "arrow-up" | "stop" | "check" | "chevron" | "tool" | "shield" | "alert" | "model" | "refresh" | "trash" | "more" | "pin" | "pencil"
 
 const PATHS: Record<IconName, string> = {
   sparkles: "M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3z M4 3v4M2 5h4 M21 18v4M19 20h4",
@@ -17,6 +17,9 @@ const PATHS: Record<IconName, string> = {
   model: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z M4 7.5l8 4.5 8-4.5 M12 12v9",
   refresh: "M20 10a8 8 0 00-14-5L3 8 M3 3v5h5 M4 14a8 8 0 0014 5l3-3 M21 21v-5h-5",
   trash: "M4 7h16 M10 4h4v3h-4z M6.5 7l1 13h9l1-13 M10 11v5 M14 11v5",
+  more: "M6 12h.01 M12 12h.01 M18 12h.01",
+  pin: "M9 3h6 M12 3v8 M8 11h8l-2 5H10l-2-5z M12 16v5",
+  pencil: "M4 20h4l10-10-4-4L4 16v4z M14 6l4 4",
 }
 
 /** 本地描边图标，不引入字体或远程资源；可交互控件的名称由外层文字/aria-label 提供。 */

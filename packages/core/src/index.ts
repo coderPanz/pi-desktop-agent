@@ -51,6 +51,7 @@ export {
   clipTitle,
   countChars,
   createTitleSummarizer,
+  RENAME_MAX_CHARS,
   TITLE_MAX_CHARS,
   type SummarizeTitle,
 } from "./agent/summarize.ts"

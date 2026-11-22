@@ -13,6 +13,8 @@ function conversation(id: number, parentId?: number): ConversationSummary {
     busy: false,
     queued: 0,
     title: undefined,
+    pinned: false,
+    updatedAt: undefined,
   }
 }
 

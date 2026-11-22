@@ -10,7 +10,9 @@
  *   entries.ts    app.ui_action / app.approval  应用条目 kind
  *   workspace.ts  app.workspace   界面侧会话状态（可回卷、按 asOf 分叉）
  *   trash.ts      app.trash       被删除（从列表移除）的会话 id
+ *   pins.ts       app.pins        侧栏置顶的会话 id
  *   title.ts      app.title       侧栏标题（第一条用户消息 / 它的 AI 摘要）
+ *   activity.ts   app.activity    会话最近一次活跃的墙钟时间（「最近」排序与时间节点）
  *
  * 后续（S7–S9，用到再写，现在写就是猜）：app.kb / app.toolbox / app.smartui
  */
@@ -29,5 +31,11 @@ export { AppWorkspaceDoc } from "./workspace.ts"
 export type { AppTrash } from "./trash.ts"
 export { AppTrashDoc } from "./trash.ts"
 
+export type { AppPins } from "./pins.ts"
+export { AppPinsDoc } from "./pins.ts"
+
 export type { AppTitle } from "./title.ts"
 export { AppTitleDoc } from "./title.ts"
+
+export type { AppActivity } from "./activity.ts"
+export { AppActivityDoc } from "./activity.ts"

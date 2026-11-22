@@ -12,14 +12,16 @@ export type ConversationTreeProps = {
   /** 根会话是界面兜底，不可删除。 */
   readonly rootId: ConversationId | undefined
   readonly actions: ConversationRowActions
+  /** 算相对时间的「现在」，由侧栏统一走动后传进来。 */
+  readonly now: number
 }
 
 /** 侧栏会话树：扁平列表按 `parent.conversationId` 拼成森林后逐层画，折叠状态由调用方持有。 */
-export function ConversationTree({ items, selected, collapsed, rootId, actions }: ConversationTreeProps) {
+export function ConversationTree({ items, selected, collapsed, rootId, actions, now }: ConversationTreeProps) {
   return (
     <>
       {conversationTree(items).map(node => (
-        <Branch key={node.item.id} node={node} depth={0} selected={selected} collapsed={collapsed} rootId={rootId} actions={actions} />
+        <Branch key={node.item.id} node={node} depth={0} selected={selected} collapsed={collapsed} rootId={rootId} actions={actions} now={now} />
       ))}
     </>
   )
@@ -32,9 +34,10 @@ type BranchProps = {
   readonly collapsed: ReadonlySet<ConversationId>
   readonly rootId: ConversationId | undefined
   readonly actions: ConversationRowActions
+  readonly now: number
 }
 
-function Branch({ node, depth, selected, collapsed, rootId, actions }: BranchProps) {
+function Branch({ node, depth, selected, collapsed, rootId, actions, now }: BranchProps) {
   const { item, children } = node
   const folded = collapsed.has(item.id)
 
@@ -47,11 +50,12 @@ function Branch({ node, depth, selected, collapsed, rootId, actions }: BranchPro
         depth={depth}
         branch={children.length === 0 ? undefined : { collapsed: folded }}
         actions={actions}
+        now={now}
       />
       {folded
         ? null
         : children.map(child => (
-            <Branch key={child.item.id} node={child} depth={depth + 1} selected={selected} collapsed={collapsed} rootId={rootId} actions={actions} />
+            <Branch key={child.item.id} node={child} depth={depth + 1} selected={selected} collapsed={collapsed} rootId={rootId} actions={actions} now={now} />
           ))}
     </>
   )

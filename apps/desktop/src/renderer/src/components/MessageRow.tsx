@@ -1,6 +1,7 @@
 import { EntryKind, entryText } from "@pi/shared-types"
 import type { ViewEntry } from "@pi/shared-types"
 
+import { AssistantAvatar } from "./AssistantAvatar.tsx"
 import { Icon } from "./Icon.tsx"
 import { MarkdownText } from "./Markdown.tsx"
 
@@ -41,7 +42,7 @@ export function MessageRow({ entry }: { readonly entry: ViewEntry }) {
   return (
     <div className="min-w-0">
       <div className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-secondary">
-        <span className="flex size-6 items-center justify-center rounded-lg bg-subtle text-accent"><Icon name="sparkles" className="size-3.5" /></span>助手
+        <AssistantAvatar className="size-7" />助手
       </div>
       <MarkdownText text={entryText(entry)} />
     </div>

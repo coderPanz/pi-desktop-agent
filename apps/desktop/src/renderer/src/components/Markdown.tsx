@@ -25,7 +25,7 @@ const COMPONENTS: Components = {
   pre: ({ children, node }) => <CodeBlock language={languageOf(node)}>{children}</CodeBlock>,
   table: ({ children }) => (
     <div className="my-4 overflow-x-auto rounded-xl border border-divider">
-      <table className="w-full border-collapse text-left text-[12px] leading-6">{children}</table>
+      <table className="w-full border-collapse text-left text-[13px] leading-6">{children}</table>
     </div>
   ),
   th: ({ children }) => <th className="border-b border-divider bg-subtle px-3 py-2 font-semibold text-secondary">{children}</th>,
@@ -42,7 +42,7 @@ export function MarkdownText({ text, reveal }: { readonly text: string; readonly
   if (reveal !== undefined) rehypePlugins.push([rehypeStreamReveal, reveal])
 
   return (
-    <div className="pi-markdown min-w-0 text-[14px] leading-7 break-words text-primary">
+    <div className="pi-markdown min-w-0 text-[15px] leading-6 break-words text-primary">
       <Markdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={rehypePlugins}

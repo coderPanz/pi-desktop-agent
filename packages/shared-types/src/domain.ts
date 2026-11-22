@@ -20,6 +20,13 @@ export type ConversationSummary = {
   readonly queued: number
   /** 侧栏标题：第一条用户消息（超过 10 字时是它的 AI 摘要）；还没说过话就是 undefined。 */
   readonly title: string | undefined
+  /** 是否置顶：置顶的排在「最近」最前面（`app.pins`）。 */
+  readonly pinned: boolean
+  /**
+   * 最近一次提交用户输入的时间（epoch 毫秒）；「最近」按它倒序，行右侧显示相对时间。
+   * 还没说过话、或者是这份文档上线前就存在的旧会话时是 undefined。
+   */
+  readonly updatedAt: number | undefined
 }
 
 /** 工具调用明面上的三种状态：等着跑 / 跑着 / 跑完了。 */

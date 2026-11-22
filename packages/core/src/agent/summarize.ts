@@ -12,6 +12,9 @@ import { pickModel } from "../agent/models.ts"
 /** 标题最多几个字（按 code point 算，emoji / 生僻字不会被劈开）。 */
 export const TITLE_MAX_CHARS = 10
 
+/** 手动重命名的上限：比自动摘要宽松（人自己起的名字不硬压成 10 字），但侧栏放得下。 */
+export const RENAME_MAX_CHARS = 24
+
 /** 后台摘要：一行输入，返回压好的标题；失败就返回 undefined，界面继续用截断后的原文。 */
 export type SummarizeTitle = (text: string) => Promise<string | undefined>
 

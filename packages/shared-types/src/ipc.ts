@@ -66,6 +66,16 @@ export type IpcMap = {
     readonly request: { readonly conversationId: ConversationId }
     readonly response: Record<string, never>
   }
+  /** 重命名：写会话标题（`app.title`），界面在列表刷新后看到。 */
+  "conv.rename": {
+    readonly request: { readonly conversationId: ConversationId; readonly title: string }
+    readonly response: { readonly title: string }
+  }
+  /** 置顶 / 取消置顶：「最近」列表里排最前（`app.pins`，session 作用域）。 */
+  "conv.pin": {
+    readonly request: { readonly conversationId: ConversationId; readonly pinned: boolean }
+    readonly response: Record<string, never>
+  }
   "conv.reset": {
     readonly request: { readonly conversationId: ConversationId; readonly handoff?: string }
     readonly response: Record<string, never>

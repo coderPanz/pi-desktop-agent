@@ -12,7 +12,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { EntryKind, messageContentText } from "@pi/shared-types"
 import type { ConversationSummary } from "@pi/shared-types"
 
-import { clipTitle, countChars, TITLE_MAX_CHARS } from "../agent/summarize.ts"
+import { clipTitle, countChars, RENAME_MAX_CHARS, TITLE_MAX_CHARS } from "../agent/summarize.ts"
 import type { SummarizeTitle } from "../agent/summarize.ts"
 import { UserError } from "../errors.ts"
 import { latestInputSubmission } from "../harness/submissions.ts"
@@ -24,7 +24,7 @@ import {
   LiveDoc,
   ROOT_CONVERSATION_ID,
 } from "@earendil-works/pi-durable"
-import { AppTitleDoc, AppTrashDoc } from "@pi/shared-docs"
+import { AppActivityDoc, AppPinsDoc, AppTitleDoc, AppTrashDoc } from "@pi/shared-docs"
 
 import type { ConversationPurge } from "../storage/purge.ts"
 import type {
@@ -174,25 +174,111 @@ export class SessionManager {
     limit = 50, // 默认读取 50 条会话
   ): Promise<ConversationSummary[]> {
     // Storage.scanConversations 是直接查持久化记录；第三个参数是分页 cursor，首次查询传 undefined。
+    // 降序取：超过 limit 时要留住的是最新的那批，而不是最早的。
     const page = await this.#storage.scanConversations(
-      { order: "ascending" }, // 按 id 升序排列
+      { order: "descending" },
       limit,
       undefined,
       context,
     )
     const hidden = new Set(await this.#hidden(context))
-    return await Promise.all(
+    const pins = new Set(await this.#pinned(context))
+    const items = await Promise.all(
       page.items
         // 「删除」只是从列表移除：记录仍在库里，这里不返回
         .filter(record => !hidden.has(record.id))
-        .map(async record => ({
-          id: record.id,
-          parent: record.parent,
-          busy: await this.isBusy(record.id, context),
-          queued: (await this.#inboxItems(record.id, context)).length,
-          title: await this.#title(record.id, context),
-        })),
+        .map(async record => {
+          // app.activity 没写过（新建还没说话、或这份文档上线前的旧会话）就没有时间节点
+          const activity = await this.#harness.snapshot(AppActivityDoc, record.id, context)
+          return {
+            id: record.id,
+            parent: record.parent,
+            busy: await this.isBusy(record.id, context),
+            queued: (await this.#inboxItems(record.id, context)).length,
+            title: await this.#title(record.id, context),
+            pinned: pins.has(record.id as number),
+            updatedAt: activity === undefined || activity.at <= 0 ? undefined : activity.at,
+          }
+        }),
     )
+    // 置顶的排最前；其余按活跃时间倒序，没有时间节点的排最后，彼此按 id 倒序（新的在上）。
+    return items.sort((left, right) => {
+      if (left.pinned !== right.pinned) return left.pinned ? -1 : 1
+      const byTime = (right.updatedAt ?? -1) - (left.updatedAt ?? -1)
+      return byTime === 0 ? right.id - left.id : byTime
+    })
+  }
+
+  /** 置顶的会话 id（`app.pins`）。 */
+  async #pinned(context: Context): Promise<readonly number[]> {
+    const pins = await this.#harness.snapshot(AppPinsDoc, context)
+    return pins?.pinned ?? []
+  }
+
+  /** 删掉会话时把它从置顶表里摘掉（`app.pins` 是 session 作用域，不跟会话级联）。 */
+  async #forgetPin(conversationId: number, context: Context): Promise<void> {
+    const pins = await this.#pinned(context)
+    if (!pins.includes(conversationId)) return
+    await this.#harness.commit(async tx => {
+      const doc = await tx.doc(AppPinsDoc)
+      doc.pinned = doc.pinned.filter(item => item !== conversationId)
+    }, context)
+  }
+
+  /**
+   * 置顶 / 取消置顶：只影响「最近」的排序偏好，不改会话本身。
+   * 置顶按加入顺序排在前面（后置顶的在上），取消就摘掉。
+   */
+  async pin(
+    conversationId: ConversationId,
+    pinned: boolean,
+    context: Context = BACKGROUND_CONTEXT,
+  ): Promise<void> {
+    if ((await this.#harness.conversation(conversationId, context)) === undefined) {
+      throw new UserError(`会话不存在：${String(conversationId)}`)
+    }
+    const id = conversationId as number
+    await this.#harness.commit(async tx => {
+      const doc = await tx.doc(AppPinsDoc)
+      const rest = doc.pinned.filter(item => item !== id)
+      doc.pinned = pinned ? [id, ...rest] : rest
+    }, context)
+  }
+
+  /**
+   * 重命名：把手写的标题写进 `app.title`，`from` 对齐第一条用户消息，
+   * 这样 `#title()` 命中它、也不会再被后台摘要覆盖掉。
+   */
+  async rename(
+    conversationId: ConversationId,
+    title: string,
+    context: Context = BACKGROUND_CONTEXT,
+  ): Promise<string> {
+    const next = clipTitle(title.trim(), RENAME_MAX_CHARS)
+    if (next === "") throw new UserError("标题不能为空。")
+    const first = await this.#firstUserText(conversationId, context)
+    if (first === undefined) throw new UserError("会话还没有消息，先发一条再重命名。")
+    await this.#harness.commit(async tx => {
+      const doc = await tx.doc(AppTitleDoc, conversationId)
+      doc.title = next
+      doc.from = first.entryId as number
+    }, context)
+    return next
+  }
+
+  /**
+   * 记一次「这个会话刚才有动静」：写 `app.activity` 的墙钟时间。
+   * 只在用户真的提交了输入（或分叉出新会话）时调——新建但还没说话的会话没有这份文档，
+   * 侧栏据此把它当作“草稿”，不列进「最近」。
+   */
+  async touch(
+    conversationId: ConversationId,
+    context: Context = BACKGROUND_CONTEXT,
+  ): Promise<void> {
+    await this.#harness.commit(async tx => {
+      const activity = await tx.doc(AppActivityDoc, conversationId)
+      activity.at = Date.now()
+    }, context)
   }
 
   /**
@@ -218,6 +304,8 @@ export class SessionManager {
     const id = conversationId as number
     if (this.#purge !== undefined) {
       await this.#purge(id)
+      // app.pins 是 session 作用域，不跟着会话级联删，这里顺手摘掉，别留死 id
+      await this.#forgetPin(id, context)
       return
     }
     await this.#harness.commit(async tx => {

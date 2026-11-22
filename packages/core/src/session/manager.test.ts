@@ -19,6 +19,8 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 //   ROOT_CONVERSATION_ID —— 默认会话的固定编号（值是 1），程序一装好就有这样一个会话
 import { MemoryStorage, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable"
 
+import { EntryKind } from "@pi/shared-types"
+
 // pi-ai 管模型。这里故意配成「空清单 + 内存凭证」：
 //   createModels()          —— 建一个模型清单，但我们一个 provider 都没注册 → 清单是空的
 //   InMemoryCredentialStore —— 凭证只放内存，没有真 key
@@ -92,6 +94,23 @@ test("起始会话是 root", async () => {
   }
 })
 
+/**
+ * 往当前会话写一条「用户消息」。
+ * 用 type: "write" 只落条目、不触发模型，测试里就能拿到标题、也能验重命名。
+ */
+async function appendUser(
+  manager: SessionManager,
+  host: HarnessHost,
+  text: string,
+): Promise<void> {
+  const conversation = await host.harness.conversation(manager.conversationId, ctx)
+  assert.ok(conversation !== undefined)
+  await conversation.submit(
+    { type: "write", entry: { kind: EntryKind.user, model: [{ role: "user", content: text, timestamp: Date.now() }] } },
+    ctx,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // 新建、切换、列出
 // ---------------------------------------------------------------------------
@@ -108,12 +127,21 @@ test("新建 / 切换 / 列表", async () => {
     await manager.select(created.id)
     assert.equal(manager.conversationId, created.id) // 会话 id 和 新会话 id 相同 测试通过
 
-    // 会话列表，默认按创建顺序
+    // 会话列表按「最近活跃」倒序；两条都还没说过话（没有时间节点）时退回按 id 倒序，新的在上
     const list = await manager.list()
     // assert.deepEqual(a, b)：递归比较
     assert.deepEqual(
       list.map((row) => row.id),
-      [ROOT_CONVERSATION_ID, created.id],
+      [created.id, ROOT_CONVERSATION_ID],
+    )
+    // 还没提交过输入：没有标题，也没有时间节点
+    assert.deepEqual(
+      list.map((row) => row.title),
+      [undefined, undefined],
+    )
+    assert.deepEqual(
+      list.map((row) => row.updatedAt),
+      [undefined, undefined],
     )
     // 两个会话都没在生成，也没有排队的消息。
     assert.deepEqual(
@@ -125,13 +153,80 @@ test("新建 / 切换 / 列表", async () => {
       [0, 0],
     )
 
-    // 999 是随便编的一个编号；断言它切不过去。
+// 999 是随便编的一个编号；断言它切不过去。
     // assert.rejects(...)：确认这段代码「应该报错」，而且错误信息要匹配第二个参数（这里是正则）。
     // 如果它没报错、或者报的是别的错，这条用例就算失败。
     await assert.rejects(
       async () => await manager.select(999 as typeof created.id),
       /会话不存在/,
     )
+  } finally {
+    await manager.closeWatches()
+    await host.close()
+  }
+})
+
+// 提交过输入（touch）的会话才有时间节点，并因此排到最前面：这是侧栏「最近」的依据。
+test("最近活跃：touch 之后有时间节点，且排在没活跃过的会话前面", async () => {
+  const { host, manager } = await openFixture()
+  try {
+    const touched = await manager.create()
+    await manager.touch(ROOT_CONVERSATION_ID)
+    await manager.touch(touched.id)
+
+    const list = await manager.list()
+    const now = Date.now()
+    assert.deepEqual(
+      list.map((row) => row.id),
+      [touched.id, ROOT_CONVERSATION_ID],
+    )
+    for (const row of list) {
+      assert.ok(row.updatedAt !== undefined && now - row.updatedAt < 60_000, "时间节点是刚才")
+    }
+  } finally {
+    await manager.closeWatches()
+    await host.close()
+  }
+})
+
+// 置顶只改排序偏好；重命名写进 `app.title`，列表里立刻换成新名字。
+test("置顶与重命名", async () => {
+  const { host, manager } = await openFixture()
+  try {
+    const created = await manager.create()
+    // create 只建会话、不改「当前会话」指针，先切过去再写
+    await manager.select(created.id)
+    await appendUser(manager, host, "新会话的问题")
+    await manager.touch(created.id)
+    await manager.select(ROOT_CONVERSATION_ID)
+    await appendUser(manager, host, "根会话的问题")
+    // 时间节点是毫秒：让两次 touch 至少差 1ms，排序才不会撞上「同一毫秒退化成 id 倒序」
+    await new Promise(resolve => setTimeout(resolve, 2))
+    await manager.touch(ROOT_CONVERSATION_ID)
+
+    // 根会话活跃得更晚，排在前面
+    assert.deepEqual(
+      (await manager.list()).map(row => [row.id, row.title, row.pinned]),
+      [[ROOT_CONVERSATION_ID, "根会话的问题", false], [created.id, "新会话的问题", false]],
+    )
+
+    // 重命名：列表立刻用新标题
+    assert.equal(await manager.rename(created.id, "  改过的名字  "), "改过的名字")
+    assert.equal((await manager.list()).find(row => row.id === created.id)?.title, "改过的名字")
+
+    // 置顶：排到最前面，即使它不是最近活跃的
+    await manager.pin(created.id, true)
+    const pinnedList = await manager.list()
+    assert.deepEqual(pinnedList.map(row => row.id), [created.id, ROOT_CONVERSATION_ID])
+    assert.equal(pinnedList[0]?.pinned, true)
+
+    // 取消置顶：回到按活跃时间排序
+    await manager.pin(created.id, false)
+    assert.deepEqual((await manager.list()).map(row => row.id), [ROOT_CONVERSATION_ID, created.id])
+
+    // 还没说过话的会话不能重命名：标题来自第一条用户消息，没有就无从对齐
+    const empty = await manager.create()
+    await assert.rejects(async () => await manager.rename(empty.id, "空会话"), /还没有消息/)
   } finally {
     await manager.closeWatches()
     await host.close()

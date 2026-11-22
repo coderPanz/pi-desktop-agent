@@ -19,6 +19,7 @@ import { invoke } from "./ipc.ts"
 import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
 import { useApprovals, useHost } from "./hooks/useHost.ts"
+import { useNow } from "./hooks/useNow.ts"
 import { useSubmission } from "./hooks/useSubmission.ts"
 
 export function App() {
@@ -86,6 +87,19 @@ export function App() {
   const queued = snapshot === undefined ? [] : queuedItems(snapshot)
   // 本轮工具调用状态的数据提取
   const tools = snapshot === undefined ? [] : toolSlots(snapshot)
+  // 相对时间自己走：侧栏的「刚刚 / 5分钟前」要跟着时间变
+  const now = useNow()
+  // 当前选中的会话摘要
+  const current = host.conversations.find((item) => item.id === selected)
+  /**
+   * 当前会话还没说过话 = 它就是「新建会话」留下的那个草稿：
+   * 侧栏不列它，也不允许再新建一个（否则会堆出多条看不见的空会话）。
+   */
+  const draftOpen = current !== undefined && current.title === undefined
+  // 「最近」只放已经开始过的会话：有第一条用户消息就有标题；空草稿等发了再说
+  const recent = host.conversations.filter((item) => item.title !== undefined)
+  // 「新建会话」只在动作在飞时置灰；当前会话还是空草稿时按钮照旧可点，只是点了不再新建（见 create）
+  const createDisabled = busyAction !== undefined
 
   /**
    * 所有动作都走同一个错误出口：失败只提示，不改界面状态。这里不需要 useCallback 其实也行
@@ -124,10 +138,35 @@ export function App() {
   }
 
   const create = (): void => {
+    // 已经有一个还没说话的草稿：二次点击直接忽略（按钮不置灰，只是不再新建）
+    if (draftOpen) return
     void run("新建", async () => {
       const created = await invoke("conv.create", {})
       await host.refresh()
       setSelected(created.conversationId)
+    })
+  }
+
+  /**
+   * 切会话。如果离开的是一条还没说过话的草稿，它永远不会进「最近」，
+   * 留着只会变成看不见的死记录，这里顺手物理删掉（空会话没有条目，删了无副作用；根会话不删）。
+   */
+  const select = (id: ConversationId): void => {
+    if (id === selected) return
+    const draftId =
+      current !== undefined &&
+      current.title === undefined &&
+      current.id !== host.info?.rootConversationId
+        ? current.id
+        : undefined
+    if (draftId === undefined) {
+      setSelected(id)
+      return
+    }
+    void run("切换", async () => {
+      await invoke("conv.delete", { conversationId: draftId })
+      await host.refresh()
+      setSelected(id)
     })
   }
 
@@ -153,6 +192,22 @@ export function App() {
     void run("删除", async () => {
       await invoke("conv.delete", { conversationId: id })
       if (id === selected) setSelected(host.info?.rootConversationId)
+      await host.refresh()
+    })
+  }
+
+  // 重命名：主进程写进 app.title，回来后重拉列表（标题在列表里）
+  const rename = (id: ConversationId, title: string): void => {
+    void run("重命名", async () => {
+      await invoke("conv.rename", { conversationId: id, title })
+      await host.refresh()
+    })
+  }
+
+  // 置顶 / 取消置顶：只改「最近」的排序偏好
+  const pin = (id: ConversationId, pinned: boolean): void => {
+    void run(pinned ? "置顶" : "取消置顶", async () => {
+      await invoke("conv.pin", { conversationId: id, pinned })
       await host.refresh()
     })
   }
@@ -207,35 +262,48 @@ export function App() {
         <Banner tone="warn">压缩失败：{compactionError}</Banner>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[244px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[264px_minmax(0,1fr)]">
         <aside
           aria-label="会话侧栏"
           className="flex min-h-0 flex-col border-r border-divider bg-sidebar px-3.5 pt-5 pb-4 backdrop-blur-xl"
         >
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-[12px] font-semibold text-secondary">会话</h2>
-            <button
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-accent hover:bg-selection active:bg-selection/70"
-              disabled={busyAction !== undefined}
-              onClick={create}
-              title="新建会话"
-            >
-              <Icon name="plus" className="size-3.5" />
-              新建
-            </button>
+          {/* 侧栏第一行：新建会话。当前会话还没开始（没有标题）时它就是那个草稿，再点无效，但按钮保持正常样式。 */}
+          <button
+            className={`flex w-full items-center gap-2 rounded-lg border border-control-border/70 bg-surface/65 px-3 py-2 text-left text-[12px] font-medium shadow-control active:bg-subtle ${createDisabled ? "text-tertiary shadow-none" : "text-primary hover:bg-surface hover:text-accent"}`}
+            disabled={createDisabled}
+            onClick={create}
+            title={
+              draftOpen
+                ? "当前会话还没开始：先发一条消息，再新建"
+                : "新建一个空会话"
+            }
+          >
+            <Icon name="plus" className={`size-3.5 ${createDisabled ? "text-tertiary" : "text-accent"}`} />
+            新建会话
+          </button>
+
+          <div className="mt-4 flex items-center justify-between px-2">
+            <h2 className="text-[12px] font-semibold text-secondary">最近</h2>
           </div>
 
           <div
-            className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto"
-            aria-label="会话列表"
+            className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto"
+            aria-label="最近会话"
           >
-            <ConversationTree
-              items={host.conversations}
-              selected={selected}
-              collapsed={collapsed}
-              rootId={host.info?.rootConversationId}
-              actions={{ select: setSelected, delete: remove, toggle }}
-            />
+            {recent.length === 0 ? (
+              <p className="px-2 py-1.5 text-[12px] leading-5 text-tertiary">
+                还没有会话：发一条消息就会出现在这里。
+              </p>
+            ) : (
+              <ConversationTree
+                items={recent}
+                selected={selected}
+                collapsed={collapsed}
+                rootId={host.info?.rootConversationId}
+                actions={{ select, delete: remove, rename, pin, toggle }}
+                now={now}
+              />
+            )}
           </div>
 
           <div className="mt-5 shrink-0 border-t border-divider pt-4">

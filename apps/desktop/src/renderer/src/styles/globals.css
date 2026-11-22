@@ -11,6 +11,7 @@
   --pi-hover: rgb(30 40 60 / 5%);
   --pi-selection: #e5efff;
   --pi-user: #edf3fc;
+  --pi-avatar: #e7eaf0;
   --pi-divider: rgb(28 36 52 / 9%);
   --pi-control-border: #dce0e6;
   --pi-text: #24272d;
@@ -36,6 +37,7 @@
   --color-hover: var(--pi-hover);
   --color-selection: var(--pi-selection);
   --color-user: var(--pi-user);
+  --color-avatar: var(--pi-avatar);
   --color-divider: var(--pi-divider);
   --color-control-border: var(--pi-control-border);
   --color-primary: var(--pi-text);
@@ -96,10 +98,10 @@ details[open] > summary .pi-disclosure { transform: rotate(90deg); }
 .pi-markdown h1 { @apply mt-7 mb-3 text-[23px] leading-snug font-semibold tracking-tight; }
 .pi-markdown h2 { @apply mt-6 mb-3 text-[19px] leading-snug font-semibold tracking-tight; }
 .pi-markdown h3 { @apply mt-5 mb-2 text-[16px] font-semibold; }
-.pi-markdown h4, .pi-markdown h5, .pi-markdown h6 { @apply mt-4 mb-2 text-[14px] font-semibold; }
+.pi-markdown h4, .pi-markdown h5, .pi-markdown h6 { @apply mt-4 mb-2 text-[15px] font-semibold; }
 /* `pre` 的上下间距归代码块外壳（CodeBlock）管，避免边框与 margin 叠在一起 */
 .pi-markdown p, .pi-markdown ul, .pi-markdown ol, .pi-markdown blockquote { @apply my-3; }
-.pi-markdown :not(pre) > code { @apply rounded-md bg-subtle px-1.5 py-0.5 font-mono text-[13px] text-primary; }
+.pi-markdown :not(pre) > code { @apply rounded-md bg-subtle px-1.5 py-0.5 font-mono text-[13.5px] text-primary; }
 .pi-markdown pre code { @apply block bg-transparent p-0 font-mono text-[13px] leading-5; }
 .pi-markdown blockquote { @apply border-l-2 border-control-border pl-4 text-secondary; }
 .pi-markdown hr { @apply my-6 border-divider; }

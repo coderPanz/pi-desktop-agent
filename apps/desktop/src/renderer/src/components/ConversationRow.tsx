@@ -1,12 +1,16 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 import type { ConversationId, ConversationSummary } from "@pi/shared-types"
 
+import { relativeTime } from "../lib/time.ts"
+import { ConversationMenu } from "./ConversationMenu.tsx"
 import { Icon } from "./Icon.tsx"
 
 export type ConversationRowActions = {
   readonly select: (id: ConversationId) => void
   readonly delete: (id: ConversationId) => void
+  readonly rename: (id: ConversationId, title: string) => void
+  readonly pin: (id: ConversationId, pinned: boolean) => void
   /** 折叠/展开子会话；没有子会话的行不会调它。 */
   readonly toggle: (id: ConversationId) => void
 }
@@ -23,11 +27,29 @@ export type ConversationRowProps = {
   readonly depth: number
   readonly branch: ConversationBranch | undefined
   readonly actions: ConversationRowActions
+  /** 算相对时间的「现在」；由列表统一给，避免每行各走一个定时器。 */
+  readonly now: number
 }
 
-/** 树的每一行：折叠箭头 + 选中区 + 删除区并列（按钮不能嵌套），删除走二次确认。 */
-export function ConversationRow({ item, active, deletable, depth, branch, actions }: ConversationRowProps) {
+/**
+ * 树的每一行：折叠箭头 + 选中区 + 「…」菜单并列（按钮不能嵌套）。
+ * 菜单里是删除（二次确认）/ 置顶 / 重命名；重命名在行内变成输入框，Enter 保存、Esc 取消、点别处保存。
+ */
+export function ConversationRow({ item, active, deletable, depth, branch, actions, now }: ConversationRowProps) {
   const [confirming, setConfirming] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [menu, setMenu] = useState<DOMRect | undefined>(undefined)
+  const input = useRef<HTMLInputElement>(null)
+  // Esc 取消时输入框卸载也会触发 blur，用这个标记跳过那一次提交
+  const cancelled = useRef(false)
+  const stamp = relativeTime(item.updatedAt, now)
+
+  const commitRename = (): void => {
+    const next = (input.current?.value ?? "").trim()
+    setRenaming(false)
+    if (next === "" || next === item.title) return
+    actions.rename(item.id, next)
+  }
 
   return (
     <div className={`group flex items-start gap-0.5 rounded-lg ${INDENT[depth] ?? INDENT[INDENT.length - 1]} ${active ? "bg-selection" : "hover:bg-hover"}`}>
@@ -44,7 +66,38 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
         </button>
       )}
 
-      {confirming ? (
+      {renaming ? (
+        <form
+          className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            commitRename()
+          }}
+        >
+          <input
+            ref={input}
+            autoFocus
+            defaultValue={item.title ?? ""}
+            maxLength={24}
+            aria-label={`重命名会话 #${item.id}`}
+            className="min-w-0 flex-1 rounded-md border border-accent/40 bg-surface px-2 py-1 text-[13px] text-primary outline-none focus:border-accent"
+            onFocus={(event) => event.currentTarget.select()}
+            onBlur={() => {
+              if (cancelled.current) {
+                cancelled.current = false
+                return
+              }
+              commitRename()
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return
+              event.preventDefault()
+              cancelled.current = true
+              setRenaming(false)
+            }}
+          />
+        </form>
+      ) : confirming ? (
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-2.5 pr-3">
           <span className="truncate text-[12px] text-secondary">删除 #{item.id}？</span>
           <button
@@ -77,9 +130,17 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
             {/* 图标表示「这一条自己是不是分叉」，子会话由左侧箭头表示 */}
             <Icon name={item.parent === undefined ? "message" : "branch"} className="mt-0.5" />
             <span className="min-w-0 flex-1">
-              {/* 显示会话标题（第一条用户消息 / 它的摘要）；完整 id 与分叉来源挂在 title 提示上 */}
-              <span className="block truncate text-[13px] font-medium">
-                {item.title ?? `会话 #${item.id}`}
+              {/* 标题（第一条用户消息 / 它的摘要）+ 右侧时间节点；完整 id 与分叉来源挂在 title 提示上 */}
+              <span className="flex items-baseline gap-2">
+                <span className="flex min-w-0 flex-1 items-baseline gap-1">
+                  {item.pinned ? <Icon name="pin" className="size-3 shrink-0 self-center text-accent" /> : null}
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                    {item.title ?? `会话 #${item.id}`}
+                  </span>
+                </span>
+                {stamp === undefined ? null : (
+                  <span className="shrink-0 text-[11px] text-tertiary tabular-nums">{stamp}</span>
+                )}
               </span>
               {item.busy || item.queued > 0 ? (
                 <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-secondary">
@@ -89,18 +150,47 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
               ) : null}
             </span>
           </button>
-          {/* 悬停/键盘聚焦时才出现，平时不占视觉份量。 */}
-          {deletable ? (
-            <button
-              aria-label={`删除会话 #${item.id}`}
-              title="删除会话（不可恢复）"
-              className="mt-1 mr-1 rounded-md p-1.5 text-tertiary opacity-0 group-hover:opacity-100 hover:bg-danger-soft hover:text-danger focus-visible:opacity-100"
-              onClick={() => setConfirming(true)}
-            >
-              <Icon name="trash" className="size-3.5" />
-            </button>
-          ) : null}
+          {/* 悬停/键盘聚焦时才出现，平时不占视觉份量；菜单打开时保持可见。 */}
+          <button
+            data-conversation-menu=""
+            aria-label={`会话 #${item.id} 的操作`}
+            aria-haspopup="menu"
+            aria-expanded={menu !== undefined}
+            title="删除 / 置顶 / 重命名"
+            className={`mt-1 mr-1 rounded-md p-1.5 text-tertiary hover:bg-hover hover:text-primary focus-visible:opacity-100 ${menu === undefined ? "opacity-0 group-hover:opacity-100" : "bg-hover opacity-100"}`}
+            onClick={(event) => {
+              if (menu !== undefined) {
+                setMenu(undefined)
+                return
+              }
+              setMenu(event.currentTarget.getBoundingClientRect())
+            }}
+          >
+            <Icon name="more" className="size-4" />
+          </button>
         </>
+      )}
+
+      {menu === undefined ? null : (
+        <ConversationMenu
+          anchor={menu}
+          pinned={item.pinned}
+          deletable={deletable}
+          onClose={() => setMenu(undefined)}
+          onDelete={() => {
+            setMenu(undefined)
+            setConfirming(true)
+          }}
+          onPin={() => {
+            setMenu(undefined)
+            actions.pin(item.id, !item.pinned)
+          }}
+          onRename={() => {
+            setMenu(undefined)
+            cancelled.current = false
+            setRenaming(true)
+          }}
+        />
       )}
     </div>
   )

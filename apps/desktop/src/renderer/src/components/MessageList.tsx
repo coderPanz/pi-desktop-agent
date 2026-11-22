@@ -8,6 +8,7 @@ import type { ViewEntry, ViewSnapshot } from "@pi/shared-types"
 
 import type { QueuedItem, ToolSlot } from "../docs.ts"
 import { useStickToBottom } from "../hooks/useStickToBottom.ts"
+import { AssistantAvatar } from "./AssistantAvatar.tsx"
 import { Icon } from "./Icon.tsx"
 import { MessageRow } from "./MessageRow.tsx"
 import { StreamingMarkdown } from "./StreamingMarkdown.tsx"
@@ -44,7 +45,7 @@ export function MessageList({ snapshot, running, tools, queued }: MessageListPro
         <div ref={content} className={`mx-auto w-full max-w-[760px] px-6 py-8 ${empty ? "flex min-h-full flex-col items-center justify-center" : "space-y-6"}`}>
           {empty ? (
             <div className="max-w-80 pb-8 text-center">
-              <span className="mx-auto mb-5 flex size-14 items-center justify-center rounded-[18px] border border-divider bg-surface text-accent shadow-control"><Icon name="sparkles" className="size-7" /></span>
+              <AssistantAvatar className="mx-auto mb-5 size-16 shadow-control" />
               <h2 className="text-[20px] font-semibold tracking-tight text-primary">开始一段对话</h2>
               <p className="mt-2.5 text-[13px] leading-6 text-secondary">{snapshot === undefined ? "正在准备工作区…" : "描述你的任务，Agent 将在本机工作区中协助你。"}</p>
             </div>
@@ -55,11 +56,11 @@ export function MessageList({ snapshot, running, tools, queued }: MessageListPro
 
           {streaming ? (
             <div>
-              <p className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-secondary"><Icon name="sparkles" className="size-3.5 text-accent" />正在生成</p>
+              <p className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-secondary"><AssistantAvatar className="size-6" />正在生成</p>
               <StreamingMarkdown text={liveText} />
             </div>
           ) : null}
-          {running && !streaming ? <p className="flex items-center gap-2 text-[12px] text-secondary"><Icon name="sparkles" className="size-3.5 text-accent" />生成中…</p> : null}
+          {running && !streaming ? <p className="flex items-center gap-2 text-[12px] text-secondary"><AssistantAvatar className="size-6" />生成中…</p> : null}
 
           {queued.length === 0 ? null : (
             <div className="rounded-xl border border-accent/10 bg-selection/35 px-4 py-3">
