@@ -200,8 +200,11 @@ cd apps/desktop/node_modules/electron && node install.js
 - 时间节点是这份功能上线后自己记的（`app.activity`）：`pi-durable` 不存墙钟时间，所以更早的旧会话没有时间、
   排在「最近」末尾，等它再次提交输入后才有。
 - 「删除会话」是物理删除、不可恢复：`pi-durable` 没有删除接口，这里自己开一条 SQLite 连接在事务里级联删掉
-  条目 / 任务 / 提交 / 文档（`packages/core/src/storage/purge.ts`）。根会话、正在运行、还有子会话的会话不可删除；
+  条目 / 任务 / 提交 / 文档（`packages/core/src/storage/purge.ts`）。正在运行、还有子会话的会话不可删除；
   `--memory` 与测试用的内存库没有 SQL 后端，退回「从列表移除」。
+- 根会话（SDK 的 reserved id `1`）也可以删：删除会连 `record_ids` 登记行一起清掉，下次启动 `harness.root()`
+  用同一个 id 重新建一个空根会话。界面不依赖它必须存在（起始会话优先选它，不存在就退到「最近」第一条），
+  新建会话的默认模型开机时就记住了，不依赖根会话的 agent 文档还在。
 - 宿主尚未监听 `HarnessHost.closed` 的存储失败结果，界面没有完整的不可用/恢复状态。
 - 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
   实测 `InMemoryCredentialStore is not a constructor`）；打包时需要确认 electron-builder 带上这些依赖。

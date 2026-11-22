@@ -18,6 +18,8 @@ export type HostState = {
   readonly info: HostInfo | undefined
   readonly status: HostStatus | undefined
   readonly conversations: readonly ConversationSummary[]
+  /** 会话列表是否已经拉到过一次：起始会话的选择要等它，否则「空列表」和「还没拉」分不开。 */
+  readonly loaded: boolean
 }
 
 export type HostHandle = HostState & {
@@ -32,6 +34,7 @@ export function useHost(): HostHandle {
   const [conversations, setConversations] = useState<
     readonly ConversationSummary[]
   >([]) // 当前的会话
+  const [loaded, setLoaded] = useState(false) // 会话列表是否拉到过一次
 
   // 组件挂载时，拉取应用信息和状态
   useEffect(() => {
@@ -72,13 +75,14 @@ export function useHost(): HostHandle {
   const refresh = useCallback(async () => {
     // 获取会话列表
     setConversations(await invoke("conv.list", { limit: 50 }))
+    setLoaded(true)
   }, [])
 
   useEffect(() => {
     void refresh().catch(() => {})
   }, [refresh])
 
-  return { info, status, conversations, refresh }
+  return { info, status, conversations, loaded, refresh }
 }
 
 export type ApprovalsHandle = {

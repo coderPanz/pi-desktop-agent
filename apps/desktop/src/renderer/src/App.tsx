@@ -45,10 +45,16 @@ export function App() {
   const submission = useSubmission(selected)
 
   // react 使用的是【引用比较】底层为 Object.is
+  /**
+   * 起始会话：等列表拉到之后再选，优先宿主给的起始会话（正常就是根会话），
+   * 但它可能已经被删掉——那就退到「最近」的第一条；一条都没有就留空，等用户点「新建会话」。
+   */
   useEffect(() => {
-    if (selected === undefined && host.info !== undefined)
-      setSelected(host.info.rootConversationId)
-  }, [host.info, selected])
+    if (selected !== undefined || !host.loaded) return
+    const bootstrap = host.info?.rootConversationId
+    const exists = bootstrap !== undefined && host.conversations.some((item) => item.id === bootstrap)
+    setSelected(exists ? bootstrap : host.conversations[0]?.id)
+  }, [host.loaded, host.info, host.conversations, selected])
 
   /**
    * 会话列表跟着条目走：用户消息落盘后，侧栏标题（第一条用户消息 / 它的摘要）才有内容。
@@ -191,8 +197,10 @@ export function App() {
   const remove = (id: ConversationId): void => {
     void run("删除", async () => {
       await invoke("conv.delete", { conversationId: id })
-      if (id === selected) setSelected(host.info?.rootConversationId)
+      // 先把列表刷新掉，再清空选中：反过来的话「起始会话」那个 effect 会拿旧列表把删掉的会话又选回来
       await host.refresh()
+      // 删的是当前这条（可能就是根会话）：交给那个 effect 重新挑一条
+      if (id === selected) setSelected(undefined)
     })
   }
 
@@ -299,7 +307,6 @@ export function App() {
                 items={recent}
                 selected={selected}
                 collapsed={collapsed}
-                rootId={host.info?.rootConversationId}
                 actions={{ select, delete: remove, rename, pin, toggle }}
                 now={now}
               />

@@ -104,10 +104,16 @@ export class SessionManager {
    */
   #firstUser = new Map<ConversationId, { readonly entryId: EntryId; readonly text: string }>()
   #watches = new Map<ConversationId, ConversationWatch>() // 会话订阅映射
+  /**
+   * 新建会话的默认模型：开机时从根会话的 `pi.agent` 拍一张快照记住。
+   * 根会话现在可以被删掉，删掉之后它的 agent 文档也一起没了，所以不能每次都现读根会话。
+   */
+  #defaultModel: AgentChange["model"]
 
   private constructor(
     conversationId: ConversationId,
     options: SessionManagerOptions,
+    defaultModel: AgentChange["model"],
   ) {
     this.#harness = options.harness
     this.#storage = options.storage
@@ -116,6 +122,7 @@ export class SessionManager {
     this.#purge = options.purge
     this.#summarizeTitle = options.summarizeTitle
     this.#onTitle = options.onTitle
+    this.#defaultModel = defaultModel
   }
 
   /**
@@ -133,7 +140,10 @@ export class SessionManager {
     // 额外查一次，避免调用方传入一个不存在的 conversationId。
     const conversation = await options.harness.conversation(id, context)
     if (conversation === undefined) throw new UserError(`会话不存在：${String(id)}`)
-    return new SessionManager(id, options)
+
+    // 根会话随时可能被删掉，先在开机时记住它的模型，之后新建会话不再依赖它还在不在。
+    const rootAgent = await options.harness.snapshot(AgentDoc, ROOT_CONVERSATION_ID, context)
+    return new SessionManager(id, options, rootAgent?.model)
   }
 
   /** 获取当前会话 id
@@ -288,13 +298,16 @@ export class SessionManager {
    *   `Storage` 没有删除接口，所以这是「唯一写者」的唯一例外，见 `storage/purge.ts`；
    * - 内存库（测试、`--memory`）没有 SQL：退回写 `app.trash`，只从会话列表移除。
    *
-   * 三种情况直接拒绝：根会话、正在运行、还有子会话（分叉/被 task 拥有）。
+   * 两种情况直接拒绝：正在运行、还有子会话（分叉/被 task 拥有）。
+   *
+   * 根会话也能删：它是 SDK 的「reserved id」，不是界面兜底。删掉之后，下次启动
+   * `harness.root()` 会用同一个 id（1）重新建一个空根会话（`purge` 连 `record_ids` 登记行一起删了，
+   * 所以 id 可以复用）；界面这边不依赖它必须存在，见 `App` 的起始会话选择。
    */
   async delete(
     conversationId: ConversationId,
     context: Context = BACKGROUND_CONTEXT,
   ): Promise<void> {
-    if (conversationId === ROOT_CONVERSATION_ID) throw new UserError("根会话不能删除。")
     if ((await this.#harness.conversation(conversationId, context)) === undefined) {
       throw new UserError(`会话不存在：${String(conversationId)}`)
     }
@@ -343,12 +356,16 @@ export class SessionManager {
     context: Context = BACKGROUND_CONTEXT,
     options: { readonly agent?: AgentChange } = {},
   ): Promise<Conversation> {
+    // 根会话还在就用它当前的模型（用户可能改过），不在就退回开机时记住的默认模型。
     const rootAgent = await this.#harness.snapshot(AgentDoc, ROOT_CONVERSATION_ID, context)
     return await this.#harness.createConversation(
       {
         ownership: { kind: "ownerless" },
         // SDK 的 ownerless 会话从空 agent 开始；模型默认取 root，显式覆盖（含 null）优先。
-        agent: { ...options.agent, model: options.agent?.model === undefined ? rootAgent?.model : options.agent.model },
+        agent: {
+          ...options.agent,
+          model: options.agent?.model === undefined ? (rootAgent?.model ?? this.#defaultModel) : options.agent.model,
+        },
       },
       context,
     )
