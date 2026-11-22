@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 
 import { Icon } from "./Icon.tsx"
 
@@ -52,10 +53,13 @@ export function ConversationMenu({ anchor, pinned, deletable, onDelete, onPin, o
     }
   }, [onClose])
 
+  // 以「…」自己为锚：左边缘对齐按钮左边缘、紧贴按钮下沿；右边/下边越界就往反方向挪
   const top = anchor.bottom + GAP + HEIGHT > window.innerHeight ? Math.max(8, anchor.top - HEIGHT - GAP) : anchor.bottom + GAP
-  const left = Math.max(8, Math.min(anchor.right - WIDTH, window.innerWidth - WIDTH - 8))
+  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - WIDTH - 8))
 
-  return (
+  // 渲染到 body：侧栏带 backdrop-blur，会给 fixed 后代造一个新的包含块，
+  // 留在行内定位会被一起偏移，于是菜单就“飞”到离按钮很远的地方。
+  return createPortal(
     <div
       ref={ref}
       role="menu"
@@ -78,7 +82,8 @@ export function ConversationMenu({ anchor, pinned, deletable, onDelete, onPin, o
         onClick={onPin}
       />
       <Item icon="pencil" label="重命名" hint="改侧栏显示的名字" onClick={onRename} />
-    </div>
+    </div>,
+    document.body,
   )
 }
 

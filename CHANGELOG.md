@@ -102,7 +102,8 @@
 ### 变更
 
 - 会话行右侧的删除按钮改为「…」下拉菜单（`ConversationMenu`）：**删除 / 置顶 / 重命名**。
-  菜单用 `fixed` 定位贴在按钮右下方（列表是 `overflow-y-auto`，行内 absolute 会被裁掉），
+  菜单以「…」为锚（左边缘对齐按钮、紧贴下沿，越界自动翻到上方/往里挪），用 `fixed` + `createPortal` 挂到
+  `document.body`——侧栏带 `backdrop-blur` 会给 fixed 后代造新的包含块，留在行内会被整体偏移到离按钮很远的地方；
   点外面、按 Esc、列表滚动、窗口缩放都收起；删除仍走行内二次确认，运行中/根会话的删除项禁用
 - 重命名在行内变成输入框：Enter 保存、Esc 取消、点别处保存；主进程 `conv.rename` 把名字写进
   conversation 级 `app.title` 并把 `from` 对齐第一条用户消息——这样后台摘要不会再覆盖它，
