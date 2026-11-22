@@ -14,6 +14,8 @@ export type ConversationMenuProps = {
   readonly pinned: boolean
   /** 运行中的会话与根会话不给删除入口。 */
   readonly deletable: boolean
+  /** 禁用时显示的原因：禁用的 `<button>` 不会弹 `title`，原因得画出来。 */
+  readonly deleteBlockedReason?: string
   readonly onDelete: () => void
   readonly onPin: () => void
   readonly onRename: () => void
@@ -26,7 +28,7 @@ export type ConversationMenuProps = {
  * 用 fixed 定位而不是行内 absolute：列表是可滚动的 `overflow-y-auto`，
  * 行内绝对定位的菜单会在列表底部被裁掉。代价是它不会跟着滚动，所以滚动/缩放时直接收起。
  */
-export function ConversationMenu({ anchor, pinned, deletable, onDelete, onPin, onRename, onClose }: ConversationMenuProps) {
+export function ConversationMenu({ anchor, pinned, deletable, deleteBlockedReason, onDelete, onPin, onRename, onClose }: ConversationMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   // 点外面、按 Esc、列表滚动、窗口缩放：收起（fixed 定位不跟随滚动）
@@ -72,7 +74,8 @@ export function ConversationMenu({ anchor, pinned, deletable, onDelete, onPin, o
         label="删除"
         danger
         disabled={!deletable}
-        hint={deletable ? "从库里彻底删除，不可恢复" : "运行中的会话与根会话不能删除"}
+        note={deletable ? undefined : (deleteBlockedReason ?? "不可删除")}
+        hint={deletable ? "从库里彻底删除，不可恢复" : (deleteBlockedReason ?? "这个会话不能删除")}
         onClick={onDelete}
       />
       <Item
@@ -91,6 +94,8 @@ function Item(props: {
   readonly icon: "trash" | "pin" | "pencil"
   readonly label: string
   readonly hint: string
+  /** 右侧的补充说明（比如「根会话不能删」），禁用项靠它把原因说清楚。 */
+  readonly note?: string
   readonly danger?: boolean
   readonly disabled?: boolean
   readonly onClick: () => void
@@ -106,6 +111,9 @@ function Item(props: {
     >
       <Icon name={props.icon} className="size-3.5" />
       {props.label}
+      {props.note === undefined ? null : (
+        <span className="ml-auto text-[11px] font-normal text-tertiary">{props.note}</span>
+      )}
     </button>
   )
 }

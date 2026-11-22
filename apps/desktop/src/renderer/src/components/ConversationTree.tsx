@@ -47,6 +47,7 @@ function Branch({ node, depth, selected, collapsed, rootId, actions, now }: Bran
         item={item}
         active={item.id === selected}
         deletable={!item.busy && item.id !== rootId}
+        deleteBlockedReason={item.id === rootId ? "根会话不能删" : item.busy ? "运行中不能删" : undefined}
         depth={depth}
         branch={children.length === 0 ? undefined : { collapsed: folded }}
         actions={actions}

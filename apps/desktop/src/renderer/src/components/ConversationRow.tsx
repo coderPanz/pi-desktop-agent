@@ -24,6 +24,8 @@ export type ConversationRowProps = {
   readonly active: boolean
   /** 正在运行的会话与根会话不给删除入口：中断归「停止」，根会话是界面兜底。 */
   readonly deletable: boolean
+  /** 不能删的原因（根会话 / 运行中）：直接显示在菜单里，禁用的按钮不会弹 title 提示。 */
+  readonly deleteBlockedReason?: string
   /** 层级，0 为顶层；只影响缩进。 */
   readonly depth: number
   readonly branch: ConversationBranch | undefined
@@ -36,7 +38,7 @@ export type ConversationRowProps = {
  * 树的每一行：折叠箭头 + 选中区 + 「…」菜单并列（按钮不能嵌套）。
  * 菜单里是删除（浮层二次确认）/ 置顶 / 重命名；重命名在行内变成输入框，Enter 保存、Esc 取消、点别处保存。
  */
-export function ConversationRow({ item, active, deletable, depth, branch, actions, now }: ConversationRowProps) {
+export function ConversationRow({ item, active, deletable, deleteBlockedReason, depth, branch, actions, now }: ConversationRowProps) {
   // 删除确认浮层贴着的那一行（行在滚动/重排后位置会失效，所以收起而不是跟随重算）
   const [confirmAt, setConfirmAt] = useState<DOMRect | undefined>(undefined)
   const [renaming, setRenaming] = useState(false)
@@ -170,6 +172,7 @@ export function ConversationRow({ item, active, deletable, depth, branch, action
           anchor={menu}
           pinned={item.pinned}
           deletable={deletable}
+          deleteBlockedReason={deleteBlockedReason}
           onClose={() => setMenu(undefined)}
           onDelete={() => {
             setMenu(undefined)
