@@ -101,7 +101,7 @@
 
 ### 变更
 
-- 助手在消息头里显示的名字从「助手」改为 **WorkPi**（对话正文、生成状态、空状态等其它文案不变）
+- 助手在消息头里显示的名字从「助手」改为 **WorkPi**，并加粗（`font-bold` + `text-primary`，原来 12px/medium/次要色）
 - 根会话现在也能删：`SessionManager.delete()` 去掉根会话保护（仍在「运行中」「有子会话」时拒绝）。
   根会话是 SDK 的 reserved id `1`，`purge` 会连 `record_ids` 登记行一起删，所以下次启动 `harness.root()`
   能用同一个 id 重新建一个空根会话；`SessionManager` 在开机时把根会话的模型记成 `#defaultModel`，
