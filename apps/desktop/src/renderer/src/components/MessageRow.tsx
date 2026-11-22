@@ -42,7 +42,7 @@ export function MessageRow({ entry }: { readonly entry: ViewEntry }) {
   return (
     <div className="min-w-0">
       <div className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-secondary">
-        <AssistantAvatar className="size-7" />助手
+        <AssistantAvatar className="size-7" />WorkPi
       </div>
       <MarkdownText text={entryText(entry)} />
     </div>
