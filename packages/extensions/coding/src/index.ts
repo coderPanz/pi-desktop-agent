@@ -17,7 +17,9 @@ import type {
 } from "@earendil-works/pi-durable"
 export type { ApprovalContext, ApprovalRequest, Approver } from "./approval.ts"
 
+import { existsSync } from "node:fs"
 import os from "node:os"
+import path from "node:path"
 
 // 审批
 import { DEFAULT_APPROVAL_TIMEOUT_MS, requestApproval, type Approver } from "./approval.ts"
@@ -53,6 +55,20 @@ export type CodingExtensionOptions = {
   readonly home?: string
   /** 工作区内 `write`/`edit` 是否免审批（默认是）。路径边界不受影响，见 `PolicyOptions`。 */
   readonly trustWorkspaceWrites?: boolean
+  /** `bash` 是否免审批（默认是）。只保留灾难性命令拦截，见 `PolicyOptions`。 */
+  readonly trustBash?: boolean
+}
+
+/** 工作区自己或它的祖先里有 `.git` 就算在 git 仓库里（与 `git rev-parse` 的直觉一致）。 */
+function isInsideGitRepository(workspace: string): boolean {
+  let current = path.resolve(workspace)
+  for (let step = 0; step < 12; step += 1) {
+    if (existsSync(path.join(current, ".git"))) return true
+    const parent = path.dirname(current)
+    if (parent === current) return false
+    current = parent
+  }
+  return false
 }
 
 /** 
@@ -101,6 +117,8 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
   const policy: PolicyOptions = {
     home: options.home ?? os.homedir(),
     trustWorkspaceWrites: options.trustWorkspaceWrites ?? true,
+    trustBash: options.trustBash ?? true,
+    workspaceIsGit: isInsideGitRepository(options.workspace),
   }
 
   /**

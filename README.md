@@ -99,14 +99,22 @@ PATH 会在系统目录后补常见安装位置（Homebrew、`~/.local/bin`、nv
 
 | 档 | 工具 | 行为 |
 |---|---|---|
-| `allow` | `read`、`list_dir`、`grep`、`glob`、工作区内 `write` / `edit`、只读命令（`ls` / `cat` / `git status` …） | 直接执行 |
-| `ask` | 其余命令（含 `bash` 写重定向、`git push` 等） | 终端提示 `审批请求：… 允许这一次执行吗？[y/N]`，输 `y` 放行 |
+| `allow` | `read`、`list_dir`、`grep`、`glob`、工作区内 `write` / `edit` / `apply_patch`、**绝大多数 bash 命令** | 直接执行 |
+| `ask` | **非 git 工作区里的递归删除**（`rm -r` / `rm -rf` / `git clean -fd`） | 终端提示 `审批请求：… 允许这一次执行吗？[y/N]`，输 `y` 放行 |
 | `deny` | 抹盘、关机、根级删除、fork 炸弹 | 不执行，给模型一条拒绝说明 |
 
-**coding 流程默认信任工作区**：`write` / `edit` 不再逐个弹审批，改完由用户 review。
-放宽的只是「问不问人」，边界没变——路径仍按工作区校验，工作区外的写入照样被拒（绝对路径、`..` 逃逸都实测拒绝）。
-`bash` 仍走三档：它能跑任意命令，没有等价的内核保证，所以保留事前确认。
-需要恢复逐个确认时，给扩展传 `trustWorkspaceWrites: false`。
+**coding 流程默认全信任**：`write` / `edit` / `apply_patch` 与绝大多数 `bash` 命令都不再逐个弹审批，
+改完由用户 review（「本轮改动」卡片 + 按文件撤销）。
+
+放宽的只是「问不问人」，边界没变：
+
+- 路径仍按工作区校验，工作区外写入照样被拒（绝对路径、`..` 逃逸实测拒绝）
+- `bash` 仍在内核沙箱里：写只到工作区与临时目录、网络默认拒绝、凭证目录读取被屏蔽
+- **灾难性命令一律拒绝**：`rm -rf /`、`rm -rf ~`、`sudo`/`doas`/`su`、关机重启、抹盘格式化、fork 炸弹
+- **非 git 工作区里的递归删除**（`rm -r` / `rm -rf` / `git clean -fd`）仍会问一次——
+  那里没有 git 基线，「本轮改动」卡片和撤销都救不回来
+
+需要恢复逐个确认时：`trustWorkspaceWrites: false`（写文件）、`trustBash: false`（bash 回到只读白名单）。
 
 非交互（管道输入、`-p`、`pnpm smoke`）时 `ask` 一律按**拒绝**处理：没人能回答的问题不该假装有人回答。
 
