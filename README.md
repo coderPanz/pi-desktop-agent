@@ -85,9 +85,14 @@ PATH 会在系统目录后补常见安装位置（Homebrew、`~/.local/bin`、nv
 
 | 档 | 工具 | 行为 |
 |---|---|---|
-| `allow` | `read`、`list_dir`、`grep`、`glob`、只读命令（`ls` / `cat` / `git status` …） | 直接执行 |
-| `ask` | `write`、`edit`、其余命令 | 终端提示 `审批请求：… 允许这一次执行吗？[y/N]`，输 `y` 放行 |
+| `allow` | `read`、`list_dir`、`grep`、`glob`、工作区内 `write` / `edit`、只读命令（`ls` / `cat` / `git status` …） | 直接执行 |
+| `ask` | 其余命令（含 `bash` 写重定向、`git push` 等） | 终端提示 `审批请求：… 允许这一次执行吗？[y/N]`，输 `y` 放行 |
 | `deny` | 抹盘、关机、根级删除、fork 炸弹 | 不执行，给模型一条拒绝说明 |
+
+**coding 流程默认信任工作区**：`write` / `edit` 不再逐个弹审批，改完由用户 review。
+放宽的只是「问不问人」，边界没变——路径仍按工作区校验，工作区外的写入照样被拒（绝对路径、`..` 逃逸都实测拒绝）。
+`bash` 仍走三档：它能跑任意命令，没有等价的内核保证，所以保留事前确认。
+需要恢复逐个确认时，给扩展传 `trustWorkspaceWrites: false`。
 
 非交互（管道输入、`-p`、`pnpm smoke`）时 `ask` 一律按**拒绝**处理：没人能回答的问题不该假装有人回答。
 

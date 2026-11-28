@@ -47,6 +47,8 @@ export type CodingExtensionOptions = {
   /** 等答复的超时，默认 120s。 */
   readonly approvalTimeoutMs?: number
   readonly home?: string
+  /** 工作区内 `write`/`edit` 是否免审批（默认是）。路径边界不受影响，见 `PolicyOptions`。 */
+  readonly trustWorkspaceWrites?: boolean
 }
 
 /** 
@@ -92,7 +94,10 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
   // 超时
   const timeoutMs = options.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS
   // 审批策略
-  const policy: PolicyOptions = { home: options.home ?? os.homedir() }
+  const policy: PolicyOptions = {
+    home: options.home ?? os.homedir(),
+    trustWorkspaceWrites: options.trustWorkspaceWrites ?? true,
+  }
 
   /**
    * 工具注册表

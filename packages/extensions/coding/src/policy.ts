@@ -13,6 +13,14 @@ export type ToolCallView = {
 
 export type PolicyOptions = {
   readonly home?: string
+  /**
+   * coding 场景默认信任工作区：`write` / `edit` 不再逐个弹审批，改完由用户 review。
+   *
+   * 放宽的只是「问不问人」，不是边界：路径仍由 `withPathGuard` 在真正执行前按工作区校验，
+   * 工作区外的写入照样被拒。真正需要事前确认的是 `bash`——它能跑任意命令，没有等价的内核保证。
+   * 想恢复逐个确认，传 `false`。
+   */
+  readonly trustWorkspaceWrites?: boolean
 }
 
 /** 只读、无副作用，直接放行的工具 */
@@ -250,7 +258,7 @@ export function classifyBash(command: string, options: PolicyOptions = {}): Verd
 /** 一次工具调用的结论。不认识的工具不归这里管：别的扩展自己决定要不要问。 */
 export function classify(call: ToolCallView, options: PolicyOptions = {}): Verdict {
   if (ALLOWED_TOOLS.has(call.name)) return "allow"
-  if (ASKED_TOOLS.has(call.name)) return "ask"
+  if (ASKED_TOOLS.has(call.name)) return options.trustWorkspaceWrites === false ? "ask" : "allow"
   if (call.name === "bash") {
     const command = call.arguments["command"]
     return classifyBash(typeof command === "string" ? command : "", options)
