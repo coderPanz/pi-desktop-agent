@@ -29,7 +29,7 @@ export function Composer({ disabled, running, onSend, onAbort }: ComposerProps) 
 
   return (
     <div className="shrink-0 px-6 pt-3 pb-5">
-      <div className="mx-auto max-w-[760px]">
+      <div className="mx-auto w-full max-w-[var(--pi-content-max)]">
         <div className="flex items-end gap-2 rounded-2xl border border-control-border bg-surface p-3 shadow-input transition-[border-color,box-shadow] duration-150 focus-within:border-accent/50 focus-within:ring-3 focus-within:ring-accent/10">
           <textarea
             aria-label="消息输入"

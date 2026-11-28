@@ -22,6 +22,8 @@ export type StickToBottom = {
   readonly onScroll: () => void
   /** 强制回到最新并恢复跟随：「回到最新」按钮、自己发消息、切会话都用它。 */
   readonly follow: () => void
+  /** 只在贴底时重新贴一次：内容结构变化（流式节点换成正式条目）不会触发 ResizeObserver 时用它兜底。 */
+  readonly nudge: () => void
 }
 
 export function useStickToBottom(resetKey: unknown): StickToBottom {
@@ -30,11 +32,14 @@ export function useStickToBottom(resetKey: unknown): StickToBottom {
   const [stuck, setStuck] = useState(true)
   /** 滚动回调与 ResizeObserver 都要立刻读到，所以用 ref 镜像，不靠 state。 */
   const sticking = useRef(true)
+  /** 上一次由程序贴底后的 scrollTop；用来区分「内容变高」与「用户自己滚走」。 */
+  const pinnedTop = useRef<number | null>(null)
 
   const pin = useCallback(() => {
     const el = scroller.current
     if (el === null) return
     el.scrollTop = el.scrollHeight
+    pinnedTop.current = el.scrollTop
   }, [])
 
   const follow = useCallback(() => {
@@ -52,13 +57,18 @@ export function useStickToBottom(resetKey: unknown): StickToBottom {
     setStuck(current => (current === next ? current : next))
   }, [])
 
-  // 内容变高就跟随；已经走开的不动
+  // 内容变高就跟随；已经走开的不动。
+  // 判据不是「现在离底部多远」（内容一长就不近了），而是「scrollTop 有没有被用户改过」：
+  // 内容增长只改 scrollHeight，不动 scrollTop；用户滚动才会改 scrollTop。
   useEffect(() => {
     const el = scroller.current
     const inner = content.current
     if (el === null || inner === null) return
     const observer = new ResizeObserver(() => {
-      if (sticking.current) pin()
+      if (!sticking.current) return
+      const pinned = pinnedTop.current
+      if (pinned !== null && Math.abs(el.scrollTop - pinned) > 1) return
+      pin()
     })
     observer.observe(inner)
     // 窗口高度变化会改变可视区，同样需要重新贴底
@@ -85,5 +95,9 @@ export function useStickToBottom(resetKey: unknown): StickToBottom {
     follow()
   }, [resetKey, follow])
 
-  return { scroller, content, stuck, onScroll, follow }
+  const nudge = useCallback(() => {
+    if (sticking.current) pin()
+  }, [pin])
+
+  return { scroller, content, stuck, onScroll, follow, nudge }
 }

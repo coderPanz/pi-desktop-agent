@@ -29,7 +29,7 @@ export function MessageList({ snapshot, running, tools, queued }: MessageListPro
   const streaming = running && liveText !== undefined && liveText !== lastAssistant
   const empty = entries.length === 0 && !running && tools.length === 0 && queued.length === 0
   // 只有用户本来就在底部时才跟随流式内容；往上翻就不动，靠「回到最新」回去
-  const { scroller, content, stuck, onScroll, follow } = useStickToBottom(snapshot?.conversation.id)
+  const { scroller, content, stuck, onScroll, follow, nudge } = useStickToBottom(snapshot?.conversation.id)
   const lastEntry = entries.at(-1)
 
   // 自己发出的消息、重置：无论之前滚到哪，都回到最新（那时用户关心的就是刚发生的事）
@@ -39,10 +39,15 @@ export function MessageList({ snapshot, running, tools, queued }: MessageListPro
     follow()
   }, [lastEntry?.id, lastEntry?.kind, follow])
 
+  // 条目从流式节点变成正式消息时高度会变但不一定触发 ResizeObserver；贴底时补一次。
+  useEffect(() => {
+    nudge()
+  }, [entries.length, liveText?.length, nudge])
+
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scroller} onScroll={onScroll} aria-label="会话内容" className="h-full overflow-y-auto">
-        <div ref={content} className={`mx-auto w-full max-w-[760px] px-6 py-8 ${empty ? "flex min-h-full flex-col items-center justify-center" : "space-y-6"}`}>
+        <div ref={content} className={`mx-auto w-full max-w-[var(--pi-content-max)] px-6 py-8 ${empty ? "flex min-h-full flex-col items-center justify-center" : "space-y-6"}`}>
           {empty ? (
             <div className="max-w-80 pb-8 text-center">
               <AssistantAvatar className="mx-auto mb-5 size-16 shadow-control" />

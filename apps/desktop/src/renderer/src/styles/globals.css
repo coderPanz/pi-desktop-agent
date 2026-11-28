@@ -26,6 +26,16 @@
   --pi-warning-soft: #fff8ea;
   --pi-danger: #b83b3b;
   --pi-danger-soft: #fff2f1;
+  /* 正文/输入框共用的内容宽度：随窗口变宽，超宽屏再放宽一档。 */
+  --pi-content-max: 820px;
+}
+
+@media (min-width: 1440px) {
+  :root { --pi-content-max: 900px; }
+}
+
+@media (min-width: 1800px) {
+  :root { --pi-content-max: 960px; }
 }
 
 @theme inline {

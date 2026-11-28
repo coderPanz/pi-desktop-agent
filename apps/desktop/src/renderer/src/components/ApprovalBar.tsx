@@ -20,7 +20,7 @@ export function ApprovalBar({ pending, onRespond }: ApprovalBarProps) {
   return (
     <div className="shrink-0 space-y-2 px-6 pt-4" aria-label="待审批操作">
       {pending.map((request) => (
-        <div key={request.id} className="mx-auto flex max-w-[760px] items-start gap-3 rounded-xl border border-warning/15 bg-warning-soft px-4 py-3.5">
+        <div key={request.id} className="mx-auto flex w-full max-w-[var(--pi-content-max)] items-start gap-3 rounded-xl border border-warning/15 bg-warning-soft px-4 py-3.5">
           <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-warning/8 text-warning"><Icon name="shield" /></span>
           <div className="min-w-0 flex-1">
             <p className="text-[12px] font-semibold text-primary">等待你的批准</p>
