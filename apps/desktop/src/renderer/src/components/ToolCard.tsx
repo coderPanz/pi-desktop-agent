@@ -24,7 +24,13 @@ const COLOR: Record<ToolSlot["status"], string> = {
 /** 输出只展示前几百字符；完整结果在会话记录里。 */
 const PREVIEW_LIMIT = 600
 
-export function ToolCard({ slot }: { readonly slot: ToolSlot }) {
+export function ToolCard({ slot, path, onOpenFile, onCopyPath }: {
+  readonly slot: ToolSlot
+  /** 这次调用带 `path` 参数的取值；没有就不提供文件动作。 */
+  readonly path: string | undefined
+  readonly onOpenFile: (path: string) => void
+  readonly onCopyPath: (path: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const output = slot.output ?? ""
   const preview = output.length > PREVIEW_LIMIT && !open ? `${output.slice(0, PREVIEW_LIMIT)}…` : output
@@ -56,6 +62,13 @@ export function ToolCard({ slot }: { readonly slot: ToolSlot }) {
 
       {open || slot.isError ? (
         <div className="border-t border-divider bg-subtle/70 px-4 py-3">
+          {path === undefined ? null : (
+            <div className="mb-2.5 flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-tertiary" title={path}>{path}</span>
+              <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => onCopyPath(path)}>复制路径</button>
+              <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => onOpenFile(path)}>打开文件</button>
+            </div>
+          )}
           <pre className="max-h-64 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-secondary">{preview === "" ? "（没有输出）" : preview}</pre>
           {dropped === "" ? null : <p className="mt-2 text-[11px] text-tertiary">{dropped}</p>}
         </div>

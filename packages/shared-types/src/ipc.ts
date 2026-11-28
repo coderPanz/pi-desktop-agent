@@ -26,6 +26,19 @@ export type IpcMap = {
     readonly request: Record<string, never>
     readonly response: Record<string, never>
   }
+  /**
+   * 用系统默认程序打开工作区里的文件；路径由主进程按工作区边界校验。
+   * 渲染进程不能把模型给的任意路径直接交给系统。
+   */
+  "file.open": {
+    readonly request: { readonly path: string }
+    readonly response: Record<string, never>
+  }
+  /** 写系统剪贴板；`file://` 下渲染进程的 Clipboard API 不可靠，统一走主进程。 */
+  "clipboard.copy": {
+    readonly request: { readonly text: string }
+    readonly response: Record<string, never>
+  }
   /** 当前模型配置；密钥只报有无，不回传值。 */
   "model.get": {
     readonly request: Record<string, never>

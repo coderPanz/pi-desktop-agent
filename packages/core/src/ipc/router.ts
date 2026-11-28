@@ -45,6 +45,12 @@ export type IpcRouterOptions = {
   readonly restart?: () => void | Promise<void>
   /** 模型配置服务；没传则 model.* 通道直接报不支持。 */
   readonly models?: ModelSettings
+  /** 工作区绝对路径；`file.open` 用它做边界校验。 */
+  readonly workspace?: string
+  /** 打开文件的实际动作（Electron 里是 `shell.openPath`）。core 不依赖 electron。 */
+  readonly openFile?: (path: string) => Promise<void>
+  /** 写剪贴板的实际动作（Electron 里是 `clipboard.writeText`）。 */
+  readonly copyText?: (text: string) => void
 }
 
 export class IpcRouter {
@@ -56,6 +62,9 @@ export class IpcRouter {
   readonly #host: HarnessHost
   readonly #restart: IpcRouterOptions["restart"]
   readonly #models: ModelSettings | undefined
+  readonly #workspace: string | undefined
+  readonly #openFile: IpcRouterOptions["openFile"]
+  readonly #copyText: IpcRouterOptions["copyText"]
   #restarting: Promise<void> | undefined
 
   constructor(options: IpcRouterOptions) {
@@ -67,6 +76,9 @@ export class IpcRouter {
     this.#host = options.host
     this.#restart = options.restart
     this.#models = options.models
+    this.#workspace = options.workspace
+    this.#openFile = options.openFile
+    this.#copyText = options.copyText
   }
 
   /** 处理渲染进程发过来的命令 */
@@ -131,6 +143,24 @@ export class IpcRouter {
           throw error
         })
         await this.#restarting
+        return {} as IpcResponse<K>
+      }
+
+      // 打开工作区里的文件：先按真实路径校验边界，再交给系统
+      case "file.open": {
+        const requested = requiredText(input, "path")
+        const openFile = this.#openFile
+        if (openFile === undefined) throw new IpcError("UNKNOWN", "当前宿主不支持打开文件。")
+        await openFile(await this.#workspaceFile(requested))
+        return {} as IpcResponse<K>
+      }
+
+      // 写剪贴板
+      case "clipboard.copy": {
+        const text = requiredText(input, "text")
+        const copyText = this.#copyText
+        if (copyText === undefined) throw new IpcError("UNKNOWN", "当前宿主不支持剪贴板写入。")
+        copyText(text)
         return {} as IpcResponse<K>
       }
 
@@ -354,6 +384,23 @@ export class IpcRouter {
   }
 
   /** 按 id 取会话句柄；不存在就是 NOT_FOUND，而不是笼统的「参数错误」。 */
+  /** 把请求路径解析成工作区内真实路径；越界/不存在一律拒绝，不把可疑路径交给系统。 */
+  async #workspaceFile(requested: string): Promise<string> {
+    const workspace = this.#workspace
+    if (workspace === undefined) throw new IpcError("UNKNOWN", "当前宿主没有配置工作区。")
+    if (requested.trim() === "") throw new IpcError("INVALID_ARGUMENT", "路径不能为空。")
+    const { realpath } = await import("node:fs/promises")
+    const path = await import("node:path")
+    const root = await realpath(workspace).catch(() => undefined)
+    if (root === undefined) throw new IpcError("UNKNOWN", "工作区不存在。")
+    const absolute = path.resolve(root, requested)
+    const real = await realpath(absolute).catch(() => undefined)
+    if (real === undefined) throw new IpcError("NOT_FOUND", `文件不存在：${requested}`)
+    const relative = path.relative(root, real)
+    if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return real
+    throw new IpcError("INVALID_ARGUMENT", `只能打开工作区内的文件：${requested}`)
+  }
+
   #requireModels(): ModelSettings {
     if (this.#models === undefined) throw new IpcError("UNKNOWN", "当前宿主未配置模型设置服务。")
     return this.#models

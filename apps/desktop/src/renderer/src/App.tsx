@@ -447,6 +447,12 @@ export function App() {
             running={running}
             tools={tools}
             queued={queued}
+            onOpenFile={(path) => {
+              void run("打开文件", async () => { await invoke("file.open", { path }) })
+            }}
+            onCopyPath={(path) => {
+              void run("复制路径", async () => { await invoke("clipboard.copy", { text: path }) })
+            }}
           />
           <Composer
             disabled={unavailable || selected === undefined}

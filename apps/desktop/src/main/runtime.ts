@@ -2,6 +2,7 @@
  * 桌面主进程的运行时配置：存储 → Harness → 会话/帧/审批/路由
  */
 import path from "node:path"
+import { clipboard, shell } from "electron"
 
 import type { Context } from "@earendil-works/chord"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
@@ -255,6 +256,13 @@ export class DesktopRuntime {
       host,
       restart: options.restart,
       models: modelRef.current,
+      workspace: paths.workspace,
+      copyText: text => clipboard.writeText(text),
+      openFile: async target => {
+        // 空字符串表示成功；返回错误信息时抛出去，让界面看到原因。
+        const error = await shell.openPath(target)
+        if (error !== "") throw new Error(`无法打开文件：${error}`)
+      },
     })
 
     log("registry", summarizeRegistry(registry.snapshot()))

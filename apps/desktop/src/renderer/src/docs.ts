@@ -5,7 +5,7 @@
  * 文档 kind 定义在 `@pi/shared-types` 的 `DocKind`；这里只做「读到能用的形状」这一步
  */
 import { DocKind } from "@pi/shared-types"
-import type { JsonObject, ViewSnapshot } from "@pi/shared-types"
+import type { JsonObject, ViewEntry, ViewSnapshot } from "@pi/shared-types"
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -111,6 +111,39 @@ export function toolSlots(snapshot: ViewSnapshot): readonly ToolSlot[] {
     const slot = slotOf(item)
     return slot === undefined ? [] : [slot]
   })
+}
+
+/**
+ * 从会话条目里取某个工具调用的 `path` 参数（`read`/`write`/`edit`/`list_dir`）。
+ *
+ * 工具槽本身不带参数，参数在发起调用的 assistant 消息里；callId 在全会话唯一，所以直接从后往前找。
+ * 拿不到就返回 undefined——此时界面不给「打开文件」，不猜路径。
+ */
+export function toolCallPath(snapshot: ViewSnapshot, callId: string): string | undefined {
+  for (let index = snapshot.entries.length - 1; index >= 0; index -= 1) {
+    const entry = snapshot.entries[index]
+    for (const message of entry?.model ?? []) {
+      if (!isObject(message) || message["role"] !== "assistant") continue
+      const content = message["content"]
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        if (!isObject(block) || block["type"] !== "toolCall" || block["id"] !== callId) continue
+        const args = block["arguments"]
+        if (isObject(args) && typeof args["path"] === "string" && args["path"].trim() !== "") return args["path"]
+      }
+    }
+  }
+  return undefined
+}
+
+/** 工具结果条目对应的调用 id（`toolResult` 消息里的 `toolCallId`），用来回查参数。 */
+export function toolResultCallId(entry: ViewEntry): string | undefined {
+  for (const message of entry.model ?? []) {
+    if (!isObject(message) || message["role"] !== "toolResult") continue
+    const id = message["toolCallId"]
+    if (typeof id === "string" && id !== "") return id
+  }
+  return undefined
 }
 
 /** 一次生成失败。`pi.live.generation.retry` 是 harness 记下的退避错误。 */

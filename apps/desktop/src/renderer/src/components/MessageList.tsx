@@ -6,6 +6,7 @@ import { useEffect } from "react"
 import { EntryKind, entryText, liveGenerationText } from "@pi/shared-types"
 import type { ViewEntry, ViewSnapshot } from "@pi/shared-types"
 
+import { toolCallPath, toolResultCallId } from "../docs.ts"
 import type { QueuedItem, ToolSlot } from "../docs.ts"
 import { useStickToBottom } from "../hooks/useStickToBottom.ts"
 import { AssistantAvatar } from "./AssistantAvatar.tsx"
@@ -19,10 +20,14 @@ export type MessageListProps = {
   readonly running: boolean
   readonly tools: readonly ToolSlot[]
   readonly queued: readonly QueuedItem[]
+  /** 打开工作区文件（主进程校验边界后交给系统）。 */
+  readonly onOpenFile: (path: string) => void
+  /** 复制路径到剪贴板。 */
+  readonly onCopyPath: (path: string) => void
 }
 
 // 已提交历史 + 实时生成 + 实时工具状态 + 排队输入统一组织成对话区 UI 的组件
-export function MessageList({ snapshot, running, tools, queued }: MessageListProps) {
+export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCopyPath }: MessageListProps) {
   const entries = snapshot === undefined ? [] : visibleEntries(snapshot.entries)
   const liveText = snapshot === undefined ? undefined : liveGenerationText(snapshot)
   const lastAssistant = snapshot === undefined ? undefined : lastAssistantText(snapshot.entries)
@@ -56,8 +61,22 @@ export function MessageList({ snapshot, running, tools, queued }: MessageListPro
             </div>
           ) : null}
 
-          {entries.map((entry) => <MessageRow key={entry.id} entry={entry} />)}
-          {tools.map((slot) => <ToolCard key={slot.callId} slot={slot} />)}
+          {entries.map((entry) => {
+            const callId = snapshot === undefined ? undefined : toolResultCallId(entry)
+            const path = snapshot === undefined || callId === undefined ? undefined : toolCallPath(snapshot, callId)
+            return (
+              <MessageRow key={entry.id} entry={entry} path={path} onOpenFile={onOpenFile} onCopyPath={onCopyPath} />
+            )
+          })}
+          {tools.map((slot) => (
+            <ToolCard
+              key={slot.callId}
+              slot={slot}
+              path={snapshot === undefined ? undefined : toolCallPath(snapshot, slot.callId)}
+              onOpenFile={onOpenFile}
+              onCopyPath={onCopyPath}
+            />
+          ))}
 
           {streaming ? (
             <div>

@@ -14,6 +14,8 @@ const CHANNEL_LIST = [
   "app.info", // 应用与环境信息；
   "app.status", // 宿主状态
   "app.restart", // 宿主失效后重启应用
+  "file.open", // 用系统程序打开工作区内文件
+  "clipboard.copy", // 写系统剪贴板
   "model.get", // 当前模型配置（密钥只说有无）
   "model.save", // 保存模型配置
   "model.clearKey", // 清除应用内保存的密钥
