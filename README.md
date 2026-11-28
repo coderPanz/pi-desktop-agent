@@ -160,6 +160,7 @@ root 缺模型时启动会补配置，已有模型选择不覆盖；新建会话
 | `ANTHROPIC_BASE_URL` | 否 | 默认 `https://api.anthropic.com` |
 | `ANTHROPIC_MODEL` | 是 | 网关支持的模型 id。不猜模型；缺配置或模型不可用时不能生成回答 |
 | `PI_LOG_LEVEL` | 否 | `debug` 时把启动链路打到 stderr |
+| `PI_FAIL_STORAGE_COUNT` | 否 | 开发验收用：前 n 次提交输入时故意落库失败，以验证失效与重启恢复；注入后写标记，重启不再注入 |
 | `PI_CRASH_POINT` | 否 | 开发故障注入：`after-submit` / `during-tool` / `after-tool-result` / `mid-generation` / `between-phases`；命中真实运行阶段后强杀进程，恢复前必须清除该变量 |
 | `PI_DEV_SERVER_URL` | 否 | 由 `pnpm dev` 注入 |
 

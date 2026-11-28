@@ -5,6 +5,7 @@
  *   1. 存储失败不允许 fallback 到内存库——失败必须显式可见，否则「数据没写入库」会被误当成「功能正常」
  *   2. 一个库文件只允许一个 Harness（单写者）。这里不做跨进程锁，也不重试。
  */
+import { existsSync, writeFileSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 
@@ -30,6 +31,28 @@ export type StorageTarget =
 /**  SQLite 默认忙碌等待：5000ms */
 export const DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
+/**
+ * 开发验收用的故障注入：PI_FAIL_STORAGE_COUNT=n 让前 n 次「用户提交」落库失败。
+ * 只匹配 submission 写入，避免启动期建根会话就失败，留出可操作的界面；
+ * 失败后写标记文件，重启不再注入，否则「重启恢复」永远验证不了。
+ */
+function injectStorageFailure(storage: Storage, file: string): Storage {
+  const count = Number(process.env["PI_FAIL_STORAGE_COUNT"] ?? 0)
+  if (!Number.isInteger(count) || count <= 0) return storage
+  const marker = path.join(path.dirname(file), ".pi-fail-storage-done")
+  if (existsSync(marker)) return storage
+  let remaining = count
+  const commit = storage.commit.bind(storage)
+  storage.commit = async (writes, context) => {
+    const userWrite = writes.some(write => write.type === "submission")
+    if (remaining <= 0 || !userWrite) return commit(writes, context)
+    remaining -= 1
+    if (remaining === 0) writeFileSync(marker, `${new Date().toISOString()}\n`)
+    throw new Error("PI_FAIL_STORAGE_COUNT 注入的存储失败")
+  }
+  return storage
+}
+
 /** 创建存储 */
 export async function createStorage(
   target: StorageTarget, // 存储目标：SQlite 或内存
@@ -40,9 +63,10 @@ export async function createStorage(
   await mkdir(path.dirname(target.file), { recursive: true }) // 创建 SQLite 文件所在的目录
   // 按需加载：内存库路径（测试、`--memory`）不该把 `node:sqlite` 拉进进程。
   const { openNodeSqliteStorage } = await import("@earendil-works/pi-durable/storage/sqlite/node")
-  return await openNodeSqliteStorage(target.file, {
+  const storage = await openNodeSqliteStorage(target.file, {
     // 打开 SQLite 数据库
     busyTimeoutMs: options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS, // 数据库被占用时，最多要等多久（ms）
     walAutoCheckpointPages: options.walAutoCheckpointPages ?? undefined, // WAL 日志积累到多大时自动整理
   })
+  return injectStorageFailure(storage, target.file)
 }
