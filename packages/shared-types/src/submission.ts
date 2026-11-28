@@ -1,3 +1,4 @@
+import { EntryKind, entryText } from "./frame.ts"
 import type { ConversationId, EntryId, ViewSnapshot } from "./frame.ts"
 
 /** 已提交的用户输入状态，不传原始输入或任意错误对象。终态在 run 结束后仍可读取。 */
@@ -38,4 +39,32 @@ export function submissionFailure(
     return undefined
   }
   return submission.message
+}
+
+/**
+ * 那次失败输入的原文本，用于「重试」。
+ *
+ * 优先按 `entryId` 定位那条用户条目；条目已不在快照里（重置/压缩后的旧选区）就退回最后一条用户消息。
+ * 拿不到就返回 undefined——此时界面不给重试按钮，而不是猜一段文本重发。
+ */
+export function failedInputText(
+  submission: InputSubmissionView | undefined,
+  snapshot: ViewSnapshot | undefined,
+): string | undefined {
+  if (submission?.status !== "unanswered" || snapshot === undefined) return undefined
+  if (submission.conversationId !== snapshot.conversation.id) return undefined
+  const matched =
+    submission.entryId === undefined
+      ? undefined
+      : snapshot.entries.find(entry => entry.id === submission.entryId)
+  const text = matched === undefined ? lastUserText(snapshot) : entryText(matched)
+  return text.trim() === "" ? undefined : text
+}
+
+function lastUserText(snapshot: ViewSnapshot): string {
+  for (let index = snapshot.entries.length - 1; index >= 0; index -= 1) {
+    const entry = snapshot.entries[index]
+    if (entry !== undefined && entry.kind === EntryKind.user) return entryText(entry)
+  }
+  return ""
 }

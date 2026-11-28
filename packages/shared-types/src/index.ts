@@ -55,7 +55,7 @@ export type {
 } from "./domain.ts"
 
 export type { InputSubmissionView } from "./submission.ts"
-export { mergeSubmissionView, submissionFailure } from "./submission.ts"
+export { failedInputText, mergeSubmissionView, submissionFailure } from "./submission.ts"
 export { hostUnavailable, mergeHostStatus } from "./host-status.ts"
 
 export type { IpcErrorCode, IpcErrorPayload } from "./errors.ts"

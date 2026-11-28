@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 
-import { hostUnavailable, submissionFailure } from "@pi/shared-types"
+import { failedInputText, hostUnavailable, submissionFailure } from "@pi/shared-types"
 import type { ConversationId } from "@pi/shared-types"
 
 import { ApprovalBar } from "./components/ApprovalBar.tsx"
@@ -22,6 +22,7 @@ import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
 import { useModelSettings } from "./hooks/useModelSettings.ts"
 import { useApprovals, useHost } from "./hooks/useHost.ts"
+import { useCountdownAt } from "./hooks/useCountdown.ts"
 import { useNow } from "./hooks/useNow.ts"
 import { useSubmission } from "./hooks/useSubmission.ts"
 
@@ -93,6 +94,9 @@ export function App() {
     snapshot === undefined ? undefined : generationFailure(snapshot)
   // 本轮提交的终态失败（来自提交追踪，需结合快照校验是否仍属当前上下文）
   const terminalFailure = submissionFailure(submission, snapshot)
+  // 重试要复用那次失败的输入原文；拿不到就不给按钮，不猜内容
+  const retryText = failedInputText(submission, snapshot)
+  const retryInSeconds = useCountdownAt(retryFailure?.retryAt)
   // 最近一次压缩失败（来自快照的 pi.live.compactionFailure）
   const compactionError =
     snapshot === undefined ? undefined : compactionFailure(snapshot)
@@ -241,6 +245,19 @@ export function App() {
     })
   }
 
+  /** 重试：用新的 requestId 重新提交同一段输入（复用旧 id 会命中幂等键，等于没重发）。 */
+  const retry = (): void => {
+    if (selected === undefined || retryText === undefined) return
+    void run("重试", async () => {
+      await invoke("conv.submit", {
+        conversationId: selected,
+        text: retryText,
+        requestId: crypto.randomUUID(),
+      })
+      await host.refresh()
+    })
+  }
+
   const reset = (): void => {
     if (selected === undefined) return
     void run("重置", async () => {
@@ -287,9 +304,26 @@ export function App() {
         </Banner>
       )}
       {retryFailure === undefined && terminalFailure === undefined ? null : (
-        <Banner tone="warn">
+        <Banner
+          tone="warn"
+          action={
+            retryFailure === undefined && retryText !== undefined ? (
+              <button
+                className="shrink-0 rounded-lg border border-warning/25 px-2.5 py-1 font-medium hover:bg-warning/10 disabled:opacity-50"
+                disabled={unavailable || busyAction !== undefined}
+                onClick={retry}
+                title="用同样的输入重新提交"
+              >
+                {busyAction === "重试" ? "重试中…" : "重试"}
+              </button>
+            ) : retryInSeconds === undefined ? null : (
+              <span className="shrink-0 tabular-nums text-warning/80">
+                {retryInSeconds === 0 ? "即将重试…" : `${retryInSeconds} 秒后重试`}
+              </span>
+            )
+          }
+        >
           生成失败：{retryFailure?.message ?? terminalFailure}
-          {retryFailure?.retryAt === undefined ? "" : "（等待自动重试）"}
         </Banner>
       )}
       {compactionError === undefined ? null : (
@@ -495,6 +529,8 @@ function Banner(props: {
   readonly tone: "warn" | "error"
   readonly children: React.ReactNode
   readonly onDismiss?: () => void
+  /** 右侧动作/状态：重试按钮、自动重试倒计时。 */
+  readonly action?: React.ReactNode
 }) {
   return (
     <div
@@ -503,6 +539,7 @@ function Banner(props: {
     >
       <Icon name="alert" className="mt-0.5" />
       <span className="min-w-0 flex-1 break-words">{props.children}</span>
+      {props.action === undefined ? null : props.action}
       {props.onDismiss === undefined ? null : (
         <button
           className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-danger/5"
