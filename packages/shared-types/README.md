@@ -142,14 +142,12 @@ import { DocKind, EntryKind, applyFrame } from "@pi/shared-types"
 1. 该数据是否确实需要跨主进程、preload、渲染进程传输；只在主进程使用的持久化文档放进 `@pi/shared-docs`。
 2. 新 IPC 命令同时更新 `IpcMap`、主进程白名单/路由、preload bridge 和渲染进程调用点。
 3. 新推送同时更新 `PushMap`、`PUSH_CHANNELS`、主进程发布处和渲染层订阅处。
-4. 变更 `pi.*` kind 或已持久化数据形状前，制定兼容/迁移方案并补测试。
+4. 变更 `pi.*` kind 或已持久化数据形状前，制定兼容/迁移方案并手动验证，不新增测试文件。
 
 ## 验证
 
 ```bash
-pnpm test       # 包含 frame、submission 与 errors 测试
-pnpm typecheck
-pnpm lint
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build
 ```
 
 ## 相关文档

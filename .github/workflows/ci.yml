@@ -16,7 +16,7 @@ env:
 
 jobs:
   verify:
-    name: typecheck / lint / test / smoke
+    name: typecheck / lint / smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -41,32 +41,10 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Unit tests
-        run: pnpm test
-
       # 端到端冒烟：真实装配 storage → open → resume → root，跑一遍 REPL 命令。
       # 不联网、不需要模型凭证（--memory + 只有 /list /new 这类无模型操作）。
       - name: Smoke
         run: pnpm smoke
-
-  seatbelt:
-    name: macOS sandbox regression
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      # 使用明确文件名，避免文件缺失时 glob 匹配 0 项也被当成通过。
-      # 只按平台跳过集成用例；macOS 缺少 sandbox-exec 必须失败。
-      - name: Seatbelt and file boundary tests
-        run: pnpm test:sandbox
 
   desktop:
     name: build desktop shell

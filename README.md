@@ -14,7 +14,7 @@
 | 能力 | 状态 |
 |---|---|
 | 终端交互（发消息 / 中断 / 排队 / 分叉 / 重置 / 压缩 / 诊断） | ✅ `pnpm cli` |
-| 持久化与普通重启恢复（SQLite + WAL） | ✅ 历史与文件已实测恢复；执行中强杀恢复尚未验收 |
+| 持久化与重启恢复（SQLite + WAL） | ✅ 普通重启及本地模型下的真实进程强杀恢复已验证；未完成模型请求可能重新发起，未知结果的旧写入/bash 调用不自动重放 |
 | 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ CLI 与桌面均已接入 |
 | 契约（IPC / 推送 / 错误码 / `app.*` 文档） | ✅ 代码里，见 `packages/shared-types`、`packages/shared-docs` |
 | 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，CLI 与桌面均可审批 |
@@ -24,7 +24,7 @@
 | 默认启动 / 新建会话 / 终态失败提示 | ✅ 开发目录加载 `.env`，新建默认使用 root 模型，终态失败可跨重启展示 |
 
 主进程持有 `HarnessHost`，渲染进程通过 `window.pi.invoke` 走 IPC、靠推送拿已提交状态。
-CLI 与桌面共用 `@pi/core`。默认对话链路已跑通；存储失败恢复、执行中强杀与安装包验收仍见 ROADMAP。
+CLI 与桌面共用 `@pi/core`。默认对话链路、宿主失效处理和本地强杀恢复已接入；模型配置与安装包验收仍见 ROADMAP。
 
 ## 快速开始
 
@@ -87,8 +87,6 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 |---|---|
 | `pnpm cli` | 终端入口（无 Electron） |
 | `pnpm smoke` | 端到端冒烟：真实装配 + 跑几条 REPL 命令，不联网、不需要凭证 |
-| `pnpm test` | 运行源码中的 `*.test.ts` 回归测试 |
-| `pnpm test:sandbox` | 沙箱与路径边界回归；macOS 上实际执行 Seatbelt，其他平台跳过集成部分 |
 | `pnpm typecheck` | 两套 tsconfig：Node 侧（packages + cli）+ desktop 侧（含 renderer） |
 | `pnpm lint` | ESLint，含两条导入边界 |
 | `pnpm gate` | 存储门禁：Electron 内置 Node 版本 + `node:sqlite` 真实建库读写 |
@@ -141,7 +139,7 @@ cli      ──▶ core / shared-types
 | `app.*` 文档与条目定义 | `packages/shared-docs/src/*` |
 
 **kind 一旦写入库就是契约**：`pi.user` / `pi.assistant` / `app.settings` 这类字符串改名等于让旧数据读不出来。
-`packages/shared-docs/src/contracts.test.ts` 用断言锁定这些值，改它必须是有意识的决定。
+修改这些值必须核对已保存数据的兼容性，并提供迁移或明确接受旧数据不可读；不新增测试文件。
 
 ### 三层运行时
 
@@ -162,7 +160,7 @@ root 缺模型时启动会补配置，已有模型选择不覆盖；新建会话
 | `ANTHROPIC_BASE_URL` | 否 | 默认 `https://api.anthropic.com` |
 | `ANTHROPIC_MODEL` | 是 | 网关支持的模型 id。不猜模型；缺配置或模型不可用时不能生成回答 |
 | `PI_LOG_LEVEL` | 否 | `debug` 时把启动链路打到 stderr |
-| `PI_CRASH_POINT` | 否 | 已定义检查点名称与 `SIGKILL` 函数，但运行链路尚未调用；仅设置变量不会触发 |
+| `PI_CRASH_POINT` | 否 | 开发故障注入：`after-submit` / `during-tool` / `after-tool-result` / `mid-generation` / `between-phases`；命中真实运行阶段后强杀进程，恢复前必须清除该变量 |
 | `PI_DEV_SERVER_URL` | 否 | 由 `pnpm dev` 注入 |
 
 模型网关走 Anthropic Messages 协议，并自带两个请求头（`user-agent: claude-cli/…`、`x-app: cli`）——
@@ -171,12 +169,13 @@ root 缺模型时启动会补配置，已有模型选择不覆盖；新建会话
 ## 开发
 
 ```bash
-pnpm typecheck && pnpm lint && pnpm test && pnpm smoke   # 提交前例行
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build   # 提交前例行
 ```
 
 改动前请读 [AGENT.md](./AGENT.md)（名字是契约、先提交后展示、主进程唯一写者、错误按范围分级）。
-CI 在 `.github/workflows/ci.yml`：`verify` 跑四项检查，`desktop` 验证构建产物，`seatbelt` 在 macOS 上运行沙箱回归。
-`test:sandbox` 使用明确文件名，测试缺失不会因 glob 匹配 0 项而假通过；macOS 缺少启动器时集成测试失败。
+CI 在 `.github/workflows/ci.yml`：`verify` 跑类型检查、lint 与 CLI 冒烟，`desktop` 验证构建产物。
+项目不维护 `.test.*`、`.spec.*` 或专用测试 fixture，不为功能自动补测试文件或测试 npm/CI 任务；
+涉及存储恢复、工具副作用和安全边界时，另做必要的手动验证，未验证能力明确标注。
 
 core 的分层与边界见 [`packages/core/README.md`](./packages/core/README.md)；
 终端入口的参数、REPL 命令与退出码见 [`apps/cli/README.md`](./apps/cli/README.md)。
@@ -198,6 +197,10 @@ cd apps/desktop/node_modules/electron && node install.js
 **桌面窗口白屏**：主进程 `did-finish-load` / `did-fail-load` 会打日志；`PI_DEV_SERVER_URL` 未注入时
 加载的是 `dist/renderer/index.html`，需要先 `pnpm build`。
 
+**存储失败**：桌面进入不可用状态，停止发送、审批和会话操作，保留已加载历史副本，并提供「重启应用」入口。
+CLI 会主动结束等待并以失败码退出。重启是重新打开存储，不是重试单次写入或降级到内存库；
+如果工具结果未知，应先检查工作区副作用再决定是否执行新操作。
+
 ## 已知限制
 
 - 打包后的应用不自动寻找开发仓库 `.env`，需显式注入环境配置；安装包的配置入口与运行行为尚未验收。
@@ -212,7 +215,8 @@ cd apps/desktop/node_modules/electron && node install.js
 - 根会话（SDK 的 reserved id `1`）也可以删：删除会连 `record_ids` 登记行一起清掉，下次启动 `harness.root()`
   用同一个 id 重新建一个空根会话。界面不依赖它必须存在（起始会话优先选它，不存在就退到「最近」第一条），
   新建会话的默认模型开机时就记住了，不依赖根会话的 agent 文档还在。
-- 宿主尚未监听 `HarnessHost.closed` 的存储失败结果，界面没有完整的不可用/恢复状态。
+- 失效恢复只支持应用重启，不做进程内热重建；重启不能自动修复磁盘满、损坏的数据库等底层问题。
+- 强杀恢复在本地模型与真实 SQLite 下验证，真实远程模型及安装包仍需单独验收；未完成模型请求可能重发，不能保证远端调用恰好一次。
 - 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
   实测 `InMemoryCredentialStore is not a constructor`）；打包时需要确认 electron-builder 带上这些依赖。
 - `bash` 不是完整读取白名单：只额外屏蔽常见凭证目录和 dotenv，其他位置的敏感文件仍可能被读取并通过工具输出交给模型。

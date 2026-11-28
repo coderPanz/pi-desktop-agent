@@ -259,18 +259,18 @@ export function withSandbox(inner: NodeExecutionEnv, sandbox: PreparedSandbox, s
      * bash 操作沙箱保护机制
      * 把原命令包装成「在 sandbox-exec 下跑的命令」
      * 1. 「在 sandbox-exec 下跑的命令」产出新的 argv，字符串命令会走 shell 解析，而数组就是 argv——内核 execve 直接执行，不经 shell
-     * 输出 case：假设 bash 工具传 "pnpm test"
+     * 输出 case：假设 bash 工具传 "pnpm build"
      * inner.exec([
           "/usr/bin/sandbox-exec", "-D",
           "WS=…", "-D", "TMP=…", "-f", "…/profile.sb",
-          "/bin/zsh", "-f", "-c", "pnpm test",
+          "/bin/zsh", "-f", "-c", "pnpm build",
         ], options, context)
      * 2. 内核侧的两次系统调用 execve
         spawn(program, args)                      # libuv → posix_spawnp → 内核
-        └─ execve("/usr/bin/sandbox-exec", ["-D","WS=…",…,"/bin/zsh","-f","-c","pnpm test"], env)
+        └─ execve("/usr/bin/sandbox-exec", ["-D","WS=…",…,"/bin/zsh","-f","-c","pnpm build"], env)
               ↓ sandbox-exec 自己先跑起来（此时还没沙箱）
               ↓ 读 -f 的 profile.sb、把 -D 标记的参数的 WS/TMP 代入、编译 → 给自己打上沙箱标签
-        └─ execve("/bin/zsh", ["-f","-c","pnpm test"], env)      # 标签随进程继承
+        └─ execve("/bin/zsh", ["-f","-c","pnpm build"], env)      # 标签随进程继承
               └─ zsh fork/exec pnpm → node → esbuild ……        # 每一层都带着同一个标签
      * - 第一次 execve 是内核正常的可执行文件加载， 沙箱是"贴在进程上的内核标签"
        - 第二次系统调用才是真正的执行，执行前需要按照策略文件规则决定是否调用

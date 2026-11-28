@@ -215,6 +215,15 @@ async function runRepl({ manager, host, openConversation, events, interactive }:
 
   /** 正在等人回答的审批；同一时刻只留一个，后到的直接拒（工具已按 sequential 排队）。 */
   let pending: PendingApproval | undefined
+  let active = true
+  void host.closed.then(end => {
+    if (!active || end.reason !== "failed") return
+    code = 1
+    process.stderr.write("存储失败，运行时已停止。请重启 CLI；不要重复执行状态不明的工具。\n")
+    pending?.settle(false)
+    events.close()
+    rl.close()
+  })
 
   try {
     for (;;) {
@@ -260,7 +269,7 @@ async function runRepl({ manager, host, openConversation, events, interactive }:
           continue
         }
         // 存储失败意味着 Harness 不可用，只能重建，不能假装还能继续用。
-        if (isSessionFailure(error)) {
+        if (isSessionFailure(error) || host.unavailableStatus !== undefined) {
           process.stderr.write(`存储失败，会话不可继续：${errorText(error)}\n`)
           return 1
         }
@@ -269,6 +278,7 @@ async function runRepl({ manager, host, openConversation, events, interactive }:
       }
     }
   } finally {
+    active = false
     events.close()
     rl.close()
   }
@@ -280,6 +290,7 @@ async function runCommand(
   command: NonNullable<ReturnType<typeof parseCommand>>,
   { manager, host, openConversation }: CommandInput,
 ): Promise<boolean> {
+  host.assertAvailable()
   switch (command.kind) {
     case "send": {
       const submission = await manager.submit(command.text, CONTEXT)

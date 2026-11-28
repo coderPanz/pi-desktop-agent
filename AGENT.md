@@ -15,7 +15,7 @@ Extension / Tool / Document kind / Entry kind / Task name / provider id 一旦�
 
 - 内置条目的 kind 与文档 kind 定义在 `packages/shared-types/src/frame.ts`。
 - `app.*` 文档与条目定义在 `packages/shared-docs/src/`。
-- `packages/shared-docs/src/contracts.test.ts` 用断言锁定这些值：改它必须是有意识的决定，并配迁移或接受旧数据读不出来。
+- 修改这些常量必须是有意识的决定，并配迁移或明确接受旧数据读不出来；通过代码核对和手动验证检查兼容性，不新增测试文件。
 
 ## 3. 先提交后展示
 
@@ -48,10 +48,17 @@ IPC 上传输的数据形状（帧 / 命令 / 推送 / 错误码）只在 `packa
 ## 8. 提交前必须通过
 
 ```bash
-pnpm typecheck && pnpm lint && pnpm test && pnpm smoke
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build
 ```
 
-`pnpm smoke` 是唯一不联网、不需要凭证的端到端检查（真实装配 + REPL 命令），别跳过。
+`pnpm smoke` 是不联网、不需要凭证的端到端检查（真实装配 + REPL 命令），别跳过。
+
+### 8.1 不维护测试文件
+
+- 不新增、扩展或保留 `.test.*`、`.spec.*` 等自动化测试文件，也不换文件名绕过这条规则。
+- 不创建仅供测试使用的 fixture、测试包或测试专用 npm/CI 任务；当前测试文件与对应任务已移除。
+- 不为功能改动自动补单元测试、回归测试或测试文档；使用类型检查、lint、已有冒烟/门禁、构建与必要的手动验证。
+- 涉及存储恢复、工具副作用或安全边界的改动，必须手动确认实际行为；未验证的能力明确标为未验证，不把构建成功当作行为正确。
 
 ## 9. 文档
 
@@ -136,7 +143,7 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm smoke
 - **列表项必须是独立组件**：`MessageList` 只负责遍历，`MessageRow` / `ToolCard` 各自成文件。列表项最容易长成几百行，而且它们本来就有独立的渲染逻辑。
 - **取数据与画界面分开**：订阅/请求放 hook（如 `useConversation`），展示组件只接 props。
 - **组件里不许调 IPC**：`invoke` 只出现在 `ipc.ts` 和 hook 里；组件的点击回调由 props 传进来。
-- **能算的不要写在组件里**：帧叠加、文本提取、时间格式化这类纯函数放到 `@pi/shared-types` 或 `renderer/lib/`，并单测（`applyFrame` 是现成例子）。
+- **能算的不要写在组件里**：帧叠加、文本提取、时间格式化这类纯函数放到 `@pi/shared-types` 或 `renderer/lib/`，通过静态检查与必要的手动验证确认行为（`applyFrame` 是现成例子）。
 
 ### 12.2 状态
 

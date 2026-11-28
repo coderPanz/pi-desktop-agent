@@ -71,20 +71,17 @@ const registry = createPiRegistry({
 
 1. **扩展运行在可信的主进程 / CLI 侧，UI 一律通过 IPC 展示状态。**不要从 `apps/desktop/src/renderer` import 扩展，也不要在扩展中 import `electron`。
 2. **工具名、扩展名和持久化文档 kind 是契约。**已经写入会话历史或注册表的名字不能随意改名。
-3. **将策略写成可测试的纯函数。**尤其是路径判断、审批分类、危险命令识别；不要把安全规则散落在 UI 事件中。
+3. **将策略写成可独立核对的纯函数。**尤其是路径判断、审批分类、危险命令识别；不要把安全规则散落在 UI 事件中。
 4. **副作用工具默认 `unsafe` 且串行。**只有中断后重复运行仍安全、结果可接受的只读操作，才标为 `safe`。
-5. **先补测试再接入注册表。**`coding/src/*.test.ts` 覆盖路径边界、审批、策略和工具注册；新扩展也应遵循这一层次。
+5. **接入注册表前确认真实行为。**手动验证路径边界、审批、策略和工具注册，不新增或维护测试文件及专用 fixture。
 
 ## 验证
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm smoke
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build
 ```
 
-其中 `pnpm test` 会运行 `packages/extensions/*/src/**/*.test.ts`；`pnpm smoke` 用 CLI 的内存存储验证真实装配链路，不依赖网络或模型凭证。
+`pnpm smoke` 用 CLI 的内存存储验证真实装配链路，不依赖网络或模型凭证。安全边界与副作用另做必要的手动验证；不新增测试 npm/CI 任务。
 
 ## 相关文档
 

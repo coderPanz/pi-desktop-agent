@@ -6,11 +6,12 @@ import type { ConversationId, InputSubmissionView } from "@pi/shared-types"
 import { invoke, subscribe } from "../ipc.ts"
 
 // 最终提交的指令的完成状态，指令生命周期监控
-export function useSubmission(conversationId: ConversationId | undefined): InputSubmissionView | undefined {
+export function useSubmission(conversationId: ConversationId | undefined, enabled = true): InputSubmissionView | undefined {
   // 初始化指令的提交状态
   const [submission, setSubmission] = useState<InputSubmissionView | undefined>(undefined)
 
   useEffect(() => {
+    if (!enabled) return // 失效时保留已有结果，不查询已关闭的库。
     setSubmission(undefined)
     if (conversationId === undefined) return
     let active = true
@@ -32,7 +33,7 @@ export function useSubmission(conversationId: ConversationId | undefined): Input
       active = false
       stop()
     }
-  }, [conversationId]) // 会话 id 更新后重新追踪指令提交状态
+  }, [conversationId, enabled]) // 会话 id 更新后重新追踪指令提交状态
 
   return submission?.conversationId === conversationId ? submission : undefined
 }

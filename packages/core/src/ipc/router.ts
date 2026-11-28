@@ -30,6 +30,7 @@ import type { ApprovalBroker } from "../approvals/broker.ts"
 import { inspectHarness } from "../diagnostics/inspect.ts"
 import type { FrameHub } from "../frames/frame-hub.ts"
 import type { SessionManager } from "../session/manager.ts"
+import type { HarnessHost } from "../harness/host.ts"
 
 // 路由配置选项
 export type IpcRouterOptions = {
@@ -38,6 +39,8 @@ export type IpcRouterOptions = {
   readonly hub: FrameHub // 会话帧管理器
   readonly approvals: ApprovalBroker // 审批管理器
   readonly info: HostInfo // 宿主信息
+  readonly host: HarnessHost
+  readonly restart?: () => void | Promise<void>
 }
 
 export class IpcRouter {
@@ -46,6 +49,9 @@ export class IpcRouter {
   readonly #hub: FrameHub
   readonly #approvals: ApprovalBroker
   readonly #info: HostInfo
+  readonly #host: HarnessHost
+  readonly #restart: IpcRouterOptions["restart"]
+  #restarting: Promise<void> | undefined
 
   constructor(options: IpcRouterOptions) {
     this.#harness = options.harness
@@ -53,6 +59,8 @@ export class IpcRouter {
     this.#hub = options.hub
     this.#approvals = options.approvals
     this.#info = options.info
+    this.#host = options.host
+    this.#restart = options.restart
   }
 
   /** 处理渲染进程发过来的命令 */
@@ -64,6 +72,14 @@ export class IpcRouter {
     try {
       return { ok: true, value: await this.#dispatch(channel, request, context) }
     } catch (error) {
+      const unavailable = this.#host.unavailableStatus
+      if (channel === "app.status" && unavailable !== undefined) {
+        return { ok: true, value: unavailable as IpcResponse<K> }
+      }
+      // 导致 Session 失败的那一次调用可能抛出原始 Storage 错误，而非 SessionFailed。
+      if (channel !== "app.restart" && unavailable !== undefined) {
+        return { ok: false, error: { code: "SESSION_FAILED", message: unavailable.error?.message ?? "运行时已停止，不能继续操作。" } }
+      }
       return { ok: false, error: toIpcErrorPayload(error) }
     }
   }
@@ -75,6 +91,10 @@ export class IpcRouter {
     context: Context,
   ): Promise<IpcResponse<K>> {
     const input = asObject(request)
+    // 连只读查询也不能再访问已关闭的库；保留的历史来自渲染进程已有副本。
+    if (channel !== "app.info" && channel !== "app.status" && channel !== "app.restart") {
+      this.#host?.assertAvailable()
+    }
     switch (channel) {
       // 获取宿主信息
       case "app.info":
@@ -82,6 +102,8 @@ export class IpcRouter {
 
       // 获取宿主状态
       case "app.status": {
+        const unavailable = this.#host?.unavailableStatus
+        if (unavailable !== undefined) return unavailable as IpcResponse<K>
         const summary = await inspectHarness(this.#harness, context) // 获取Harness摘要
         const status: HostStatus = {
           scheduling: summary.scheduling,
@@ -90,7 +112,20 @@ export class IpcRouter {
           blocked: summary.counts.blocked,
           submissions: summary.counts.submissions,
         }
-        return status as IpcResponse<K>
+        return (this.#host?.unavailableStatus ?? status) as IpcResponse<K>
+      }
+
+      case "app.restart": {
+        if (this.#host?.unavailableStatus?.scheduling !== "failed") {
+          throw new IpcError("BUSY", "只有失效的运行时可以请求重启应用。")
+        }
+        if (this.#restart === undefined) throw new IpcError("UNKNOWN", "当前宿主不支持应用重启。")
+        this.#restarting ??= Promise.resolve().then(this.#restart).catch(error => {
+          this.#restarting = undefined
+          throw error
+        })
+        await this.#restarting
+        return {} as IpcResponse<K>
       }
 
       // 获取会话列表

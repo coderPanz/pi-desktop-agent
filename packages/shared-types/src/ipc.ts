@@ -21,6 +21,11 @@ export type IpcMap = {
     readonly request: Record<string, never>
     readonly response: HostStatus
   }
+  /** 仅宿主失效后允许重启应用；不能重试单次存储操作或降级为内存库。 */
+  "app.restart": {
+    readonly request: Record<string, never>
+    readonly response: Record<string, never>
+  }
   /** 会话列表 */
   "conv.list": {
     readonly request: { readonly limit?: number }

@@ -3,6 +3,7 @@
  */
 
 import type { ConversationId, EntryId, TaskId } from "./frame.ts"
+import type { IpcErrorPayload } from "./errors.ts"
 
 /** 会话列表里的一条记录 */
 export type ConversationSummary = {
@@ -71,7 +72,9 @@ export type ApprovalView = {
 /** 整体运行状况，给启动自检和状态栏用；不含任何消息内容。 */
 export type HostStatus = {
   /** 调度器在不在推进。 */
-  readonly scheduling: "running" | "paused" | "closing"
+  readonly scheduling: "running" | "paused" | "closing" | "failed"
+  /** 仅宿主失效时存在；不是模型请求或单次工具失败。 */
+  readonly error?: IpcErrorPayload
   /** 任务总数 / 在跑的 / 卡住的 / 还没结算的提交数。 */
   readonly tasks: number
   readonly running: number

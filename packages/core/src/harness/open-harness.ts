@@ -20,6 +20,7 @@ import type {
 } from "@earendil-works/pi-durable"
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env"
 import type { Models } from "@earendil-works/pi-ai"
+import { attachCrashProbes } from "./crash-probes.ts"
 
 export type OpenHarnessOptions = {
   /** pi-ai 的模型访问入口 */
@@ -80,6 +81,7 @@ export async function openHarness(
     context,
   )
 
+  attachCrashProbes(harness)
   const root = await harness.root(
     context,
     options.agent === undefined ? undefined : { agent: options.agent },

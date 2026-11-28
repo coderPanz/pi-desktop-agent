@@ -58,6 +58,7 @@ export class ApprovalBroker {
   /** 会话 id → 该会话中待批请求的 id 的映射， */
   readonly #byConversation = new Map<number, string[]>()
   #counter = 0 // 审批 id 生成器
+  #closed = false
 
   constructor(options: ApprovalBrokerOptions) {
     this.#harness = options.harness
@@ -77,6 +78,7 @@ export class ApprovalBroker {
     input: ApprovalInput,
     context: ApprovalContextInput, // 中断信号
   ): Promise<boolean> {
+    if (this.#closed || context.signal?.aborted) return false
     const id = this.#nextId() // 生成审批 id
     const view: ApprovalView = {
       id, // 审批 id
@@ -115,15 +117,17 @@ export class ApprovalBroker {
       // 通知界面并拿到 审批视图和审批决定
       this.#publish(view.conversationId)
       // 写入待批请求
-      void this.#writePending(view.conversationId)
+      void this.#writePending(view.conversationId).then(saved => {
+        if (!saved) this.#gates.get(id)?.settle("denied")
+      })
     })
 
     // 审批结束，将审批记录从内存中移除，不影响持久化
     this.#forget(id, input.conversationId)
     // 持久化审批决定
-    await this.#writeDecision(input.conversationId, id, decision)
-    // 审批是否通过
-    return decision === "approved"
+    const saved = await this.#writeDecision(input.conversationId, id, decision)
+    // 审批不能在存储已失效时继续放行，也不能只凭界面的点击就执行副作用。
+    return saved && !this.#closed && decision === "approved"
   }
 
   /**
@@ -148,6 +152,7 @@ export class ApprovalBroker {
 
   /** 关闭时把所有挂起的请求结算掉，避免留下没人等的 Promise */
   closeAll(): void {
+    this.#closed = true
     for (const [id, gate] of [...this.#gates]) {
       // 清理审批闸门
       gate.settle("expired")
@@ -199,8 +204,8 @@ export class ApprovalBroker {
   }
 
   /** 持久化审批请求 */
-  async #writePending(conversationId: number): Promise<void> {
-    await this.#commit(conversationId, doc => {
+  async #writePending(conversationId: number): Promise<boolean> {
+    return await this.#commit(conversationId, doc => {
       doc.pending = this.#views(conversationId).map(view => ({
         id: view.id,
         callId: view.callId,
@@ -216,8 +221,8 @@ export class ApprovalBroker {
     conversationId: number,
     id: string,
     decision: ApprovalDecision,
-  ): Promise<void> {
-    await this.#commit(conversationId, doc => {
+  ): Promise<boolean> {
+    return await this.#commit(conversationId, doc => {
       const remaining = this.#views(conversationId)
       doc.pending = remaining.map(view => ({
         id: view.id,
@@ -259,7 +264,7 @@ export class ApprovalBroker {
     // AppApprovals：待批队列+最近一次审批决定
     mutate: (doc: AppApprovals) => void,
     context: Context = BACKGROUND_CONTEXT,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       await this.#harness.commit(async tx => {
         const doc = await tx.doc(
@@ -268,8 +273,10 @@ export class ApprovalBroker {
         )
         mutate(doc)
       }, context)
+      return true
     } catch {
-      // 会话不存在、库已关、或文档被淘汰：审计信息丢了，但审批本身照常进行。
+      // 不把审计写入失败误当作批准成功；宿主的 closed 通知负责全局失效处理。
+      return false
     }
   }
 }

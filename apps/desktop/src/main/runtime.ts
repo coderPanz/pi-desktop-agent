@@ -53,6 +53,8 @@ export type DesktopRuntimeOptions = {
   /** 是否写文件；`false` 用内存库（排障用） */
   readonly memory?: boolean
   readonly log?: (line: string, detail?: Record<string, unknown>) => void
+  /** 平台层只安排应用重启，不在进程内重建 Harness。 */
+  readonly restart?: () => void | Promise<void>
 }
 
 /** 
@@ -81,6 +83,10 @@ export class DesktopRuntime {
   readonly #publish: DesktopRuntimeOptions["publish"] // 推送出口： 用于运行时想把某个状态告诉界面时
   readonly #stopSink: () => void // 停止帧 sink ：用于停止向接受者推送会话帧
   #closing: Promise<void> | undefined // 应用退出，持续关闭
+  readonly #manager: SessionManager
+  readonly #stopClose: () => void
+  readonly #log: NonNullable<DesktopRuntimeOptions["log"]>
+  #viewsClosing: Promise<void> | undefined
 
   private constructor(input: {
     options: DesktopRuntimeOptions // 运行时配置
@@ -91,6 +97,7 @@ export class DesktopRuntime {
     router: IpcRouter // 路由处理
     info: HostInfo // 宿主信息
     stopSink: () => void // 停止帧 sink ：用于停止向接受者推送会话帧
+    manager: SessionManager
   }) {
     this.paths = input.paths
     this.host = input.host
@@ -100,11 +107,36 @@ export class DesktopRuntime {
     this.info = input.info
     this.#publish = input.options.publish
     this.#stopSink = input.stopSink
+    this.#manager = input.manager
+    this.#log = input.options.log ?? (() => {})
+    // close 通知在 Session 线上：只排微任务，不能在监听器里调用 Session API。
+    this.#stopClose = this.host.harness.subscribeClose(() => {
+      queueMicrotask(() => {
+        if (this.#closing !== undefined) return
+        this.approvals.closeAll()
+        this.#stopSink()
+        const status = this.host.unavailableStatus
+        if (status !== undefined) this.publishStatus(status)
+      })
+    })
+    void this.host.closed.then(end => {
+      this.#stopClose()
+      if (end.reason !== "failed") return
+      this.#log("runtime failed", { error: String(end.error) })
+      this.approvals.closeAll()
+      this.#stopSink()
+      this.publishStatus(this.host.unavailableStatus!)
+      void this.#closeViews().catch(error => this.#log("view cleanup failed", { error: String(error) }))
+    })
   }
 
   // 打开运行时： 初始化所有对象，并返回运行时实例
   static async open(options: DesktopRuntimeOptions): Promise<DesktopRuntime> {
     const log = options.log ?? (() => {})
+    const publish: DesktopRuntimeOptions["publish"] = (channel, payload) => {
+      try { options.publish(channel, payload) }
+      catch (error) { log("push failed", { channel, error: String(error) }) }
+    }
     const paths = workspacePaths(path.resolve(options.dataDir))
     if (options.memory !== true) await ensureWorkspacePaths(paths)
 
@@ -154,7 +186,7 @@ export class DesktopRuntime {
       // 超过 10 字的第一条用户消息：后台问一次模型压成标题，生成好就推给界面
       summarizeTitle: createTitleSummarizer(resolveModels),
       onTitle: (conversationId, title) =>
-        options.publish("conv.title", { conversationId, title }),
+        publish("conv.title", { conversationId, title }),
     })
 
     // 创建帧管理器： 用于管理会话帧
@@ -163,14 +195,14 @@ export class DesktopRuntime {
     })
     // 创建会话帧的接受者
     const stopFrames = hub.addSink((frame: ViewFrame) =>
-      options.publish("view", frame),
+      publish("view", frame),
     )
     // 停止提交
     const stopSubmissions = host.harness.subscribeCommits(publication => {
       for (const change of publication.changes) {
         if (change.type !== "submission") continue
         const view = materializeSubmission(change.value)
-        if (view !== undefined) options.publish("submission", view)
+        if (view !== undefined) publish("submission", view)
       }
     })
     // 停止向接收方发帧
@@ -183,7 +215,7 @@ export class DesktopRuntime {
     const broker = new ApprovalBroker({
       harness: host.harness,
       onChange: (conversationId, pending) =>
-        options.publish("approval", { conversationId, pending }),
+        publish("approval", { conversationId, pending }),
       timeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS,
     })
     approvalsRef.current = broker
@@ -209,6 +241,8 @@ export class DesktopRuntime {
       hub,
       approvals: broker,
       info,
+      host,
+      restart: options.restart,
     })
 
     log("registry", summarizeRegistry(registry.snapshot()))
@@ -220,7 +254,7 @@ export class DesktopRuntime {
     })
 
     return new DesktopRuntime({
-      options,
+      options: { ...options, publish },
       paths,
       host,
       hub,
@@ -228,6 +262,7 @@ export class DesktopRuntime {
       router,
       info,
       stopSink,
+      manager,
     })
   }
 
@@ -240,7 +275,7 @@ export class DesktopRuntime {
   // 关闭运行时
   async #close(context: Context): Promise<void> {
     // 先告诉界面「要关了」，再停推送：反过来的话这条状态发不出去。
-    this.#publish("host.status", {
+    this.publishStatus({
       scheduling: "closing",
       tasks: 0,
       running: 0,
@@ -249,13 +284,27 @@ export class DesktopRuntime {
     })
     this.#stopSink()
     this.approvals.closeAll()
-    await this.hub.closeAll()
-    await this.host.close(context)
+    try {
+      await this.#closeViews()
+    } finally {
+      await this.host.close(context)
+      this.#stopClose()
+    }
+  }
+
+  #closeViews(): Promise<void> {
+    this.#viewsClosing ??= (async () => {
+      const results = await Promise.allSettled([this.hub.closeAll(), this.#manager.closeWatches()])
+      const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+      if (errors.length > 0) throw new AggregateError(errors, "会话订阅清理失败。")
+    })()
+    return this.#viewsClosing
   }
 
   /** 推送一条宿主状态（给状态栏用）。 */
   publishStatus(status: PushMap["host.status"]): void {
-    this.#publish("host.status", status)
+    // 已失效的宿主不能被迟到的健康度查询或普通关机通知覆盖。
+    this.#publish("host.status", this.host.unavailableStatus ?? status)
   }
 }
 

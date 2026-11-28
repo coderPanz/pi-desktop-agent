@@ -74,14 +74,12 @@ import {
 2. kind 使用 `app.` 命名空间，名称一旦发布不要重用或改名。
 3. 字段不兼容时提升文档的 `version`；条目数据保留显式 `v` 字段，并在读取侧兼容旧版本或迁移。
 4. 根据业务选择 scope、`history`、`fork` 和 checkpoint 策略；不要把会话局部状态误放进 `session` 文档。
-5. 为新增 kind 在 `src/contracts.test.ts` 加断言，锁定字符串、版本和关键元数据。
+5. 核对新增 kind 的字符串、版本和关键元数据，并手动确认旧数据兼容性；不新增测试文件。
 
 ## 验证
 
 ```bash
-pnpm test       # 包含 shared-docs 的契约测试
-pnpm typecheck
-pnpm lint
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build
 ```
 
 ## 相关文档

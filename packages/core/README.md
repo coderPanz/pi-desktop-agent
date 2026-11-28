@@ -11,7 +11,7 @@
 | 规则 | 怎么保证 |
 |---|---|
 | **禁止 `import electron`** | `eslint.config.mjs` 对 `packages/**/*.ts`、`apps/cli/**/*.ts` 开 `no-restricted-imports`，违反即 lint 报错 |
-| 只能是纯 Node | 全部模块可用 `node --import tsx` 直接跑；`pnpm test` 不需要 Electron、不联网、不需要 `.env` |
+| 只能是纯 Node | 全部模块可用 `node --import tsx` 直接跑；CLI 冒烟不需要 Electron、不联网、不需要凭证 |
 | 不碰界面 | 不 import React / 渲染进程 / `window`；渲染进程反过来也不许 import `@pi/core`（渲染进程只依赖 `@pi/shared-types`） |
 | 不重复实现 SDK | `Storage` / `Harness` / `Conversation` / `ExecutionEnv` 这些接口来自 `pi-durable`，core 里**不重新定义接口** |
 
@@ -28,7 +28,8 @@
 | `errors.ts` | `UserError` / `ConfigError` | 与 SDK 的 `SessionFailed` 分工：前者可继续，后者必须重建 Harness |
 | `storage/create-storage.ts` | 文件库（`node:sqlite`，WAL）/ 内存库 | **失败不降级**到内存库；一个库文件只允许一个 Harness |
 | `harness/open-harness.ts` | `storage → Harness.open → root/补模型 → resume` | 恢复任务前先准备模型；只补空模型，不覆盖已有选择 |
-| `harness/host.ts` | `HarnessHost` | 唯一有内部依赖的文件；`#closing ??=` 保证 `close()` 幂等 |
+| `harness/host.ts` | `HarnessHost` | 关闭开始就撤销准入，`closed` 提供失效快照，`close()` 幂等 |
+| `harness/crash-probes.ts` | 开发故障注入 | 根据真实提交检查点或工具结果提交前的钩子注入强杀；默认不启用 |
 | `harness/materialize.ts` | `materializeView` | SDK 视图 → `@pi/shared-types` 的副本结构；坏条目/坏文档丢弃而不抛错 |
 | `harness/submissions.ts` | 用户输入持久化状态投影 | 终态不依赖 live；写入与后续排队提交不遮住当前失败 |
 | `harness/registry.ts` | `createPiRegistry` / `summarizeRegistry` | 内置扩展由调用方注入（core 不知道有哪些工具）；注册表可热改 |
@@ -88,7 +89,7 @@ await host.close()                               // 幂等
 `context` 是 pi-durable 每个 API 都要带的「信封」，业务代码没有特殊需求时统一传
 `BACKGROUND_CONTEXT`（`@earendil-works/chord/context`），`SessionManager` 内部已默认这么做。
 
-### 测试模式（不联网、不写文件）
+### 内存排障模式（不联网、不写文件）
 
 ```ts
 import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai"
@@ -101,7 +102,7 @@ const host = await HarnessHost.open({ storage, models, registry: createPiRegistr
 const manager = await SessionManager.open({ harness: host.harness, storage })
 ```
 
-这也是 `session/manager.test.ts` 里的 `openFixture()`——**core 的最小可运行装配就是这 6 行**。
+该装配只用于明确选择的内存排障模式；正常运行使用文件库，存储失败时不能自动切到内存库。
 
 ## 设计规则（改代码前先看）
 
@@ -113,48 +114,31 @@ const manager = await SessionManager.open({ harness: host.harness, storage })
 4. **顺序即契约**：`storage → open → root/补模型 → resume`、`open()` 不重放历史、`fork` 不猜 entryId（没条目就报错）。
 5. **不打印**：core 返回数据，格式化交给 `apps/cli/render.ts` 与渲染进程。
 
-## 测试
+## 验收
 
 ```bash
-pnpm test        # node --import tsx --test "packages/core/src/**/*.test.ts"
-pnpm typecheck   # 含 apps/desktop/tsconfig.json
-pnpm lint        # 硬边界（禁 electron / 渲染进程禁 node:*）在这里生效
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build
 ```
 
-当前 **25 条 `node:test`**，5 个测试文件：
-
-| 文件 | 覆盖 |
-|---|---|
-| `session/manager.test.ts` | 起始会话是 root、新建/切换/列表、fork 继承 parent、**fork 无条目显式失败**、reset 写 `pi.reset`、isBusy/inbox、**view 按会话缓存同一对象**、queue modes、`close()` 幂等 |
-| `frames/frame-hub.test.ts` | open 不重放历史、seq 单调 +1、重复 open 续 seq、移除 sink、坏 sink 不打断别人、会话不存在报错 |
-| `storage/create-storage.test.ts` | **文件库跨进程重开能读回已提交条目**、父目录自动创建、内存库不写文件 |
-| `paths.test.ts` | 默认布局、相对根解析成绝对路径、工作区可指向根外、`ensureWorkspacePaths` 可重复调用 |
-| `diagnostics/inspect.test.ts` | 空闲时 0 任务且摘要不含条目内容、注册表摘要只列名字 |
+项目不维护 `.test.*`、`.spec.*` 或专用测试 fixture，不为新功能自动补测试文件。
+存储重开、崩溃恢复、工具副作用与路径边界通过必要的手动操作验证；未验证的行为明确注明，不能仅凭构建成功宣称可用。
+具体规则见根目录 `AGENT.md` §8。
 
 ## 依赖方向
 
-下图是**声明意图**（`package.json` 的依赖与目标架构），当前实际状态：
-
-- `apps/cli` / `apps/desktop` 还没接 `@pi/core`（根 README「下一步是接线」说的就是这件事）；
-- core 代码目前**没有 import 任何 `@pi/*` 包**，只有注释提到 `@pi/shared-docs` / `@pi/ext-*`。
+CLI 与桌面主进程已经共用 core；扩展由宿主安装，core 不直接依赖具体工具包。
 
 ```
-apps/desktop (主进程)  apps/cli              渲染进程（禁 import @pi/core）
-            │              │
-            └──────┬───────┘
-                @pi/core ──→ @pi/ext-coding / ext-kb / ext-smartui / ext-toolsmith（当前空壳）
-                   │      ──→ @pi/shared-docs / @pi/shared-types
-                   └──────→ @earendil-works/{pi-durable, pi-ai, chord}
+apps/desktop (主进程) / apps/cli
+  ├─ @pi/core ──→ @pi/shared-docs / @pi/shared-types
+  │            └→ @earendil-works/{pi-durable, pi-ai, chord}
+  └─ extensions/*（按实际需要安装）
+renderer ──→ @pi/shared-types（禁止 import @pi/core）
 ```
 
-core 内部只有**一条**内部依赖边：`harness/host.ts → harness/open-harness.ts`；
-其余 10 个模块只依赖 SDK 与 `node:*`。
+## 后续范围
 
-## 还没实现（S5，等 `@pi/shared-docs` 的 `app.*` 文档定义）
-
-- `harness/materialize.ts`——把 `app.*` 文档物化进会话创建
-- `agent/credentials.ts`——凭证存储（现在只有 `envApiKeyAuth` 环境变量）
-- `frames/doc-hub.ts`——文档帧（FrameHub 现在只推 `ConversationView`）
+凭证配置与安全持久化仍待完善，当前凭证来自宿主环境；具体差距以 ROADMAP 与源码为准，不提前创建规划模块。
 
 ## 相关文档
 

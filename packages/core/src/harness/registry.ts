@@ -7,6 +7,7 @@
  */
 import { createRegistry } from "@earendil-works/pi-durable" // 创建注册表
 import type { Extension, Registry, RegistrySnapshot, ToolRegistration } from "@earendil-works/pi-durable"
+import { crashProbeExtension } from "./crash-probes.ts"
 
 /** 注册表选项 */
 export type RegistryOptions = {
@@ -18,6 +19,8 @@ export type RegistryOptions = {
 export function createPiRegistry(options: RegistryOptions = {}): Registry<ToolRegistration> {
   const registry = createRegistry<ToolRegistration>() // 创建注册表
   for (const extension of options.extensions ?? []) registry.install(extension) // 遍历扩展并安装在注册表中
+  const probes = crashProbeExtension()
+  if (probes !== undefined) registry.install(probes)
   return registry // 返回注册表
 }
 

@@ -1,10 +1,10 @@
 /**
- * 人为创建 “程序崩溃，重启后能继续未完成的工作” 的测试开关
+ * 开发排障用的故障注入开关：手动确认强杀后的恢复行为
  * pi-durable 的重要能力是：程序在执行中崩溃后，重新打开 Storage 仍能继续未完成的工作
  * 真实崩溃很难稳定复现，所以在关键位置调用 `crashPoint("...")`：
  * - 平常没有配置时，它立即返回，对正常运行没有影响；
  * - 用环境变量 `PI_CRASH_POINT=after-submit` 启动时，执行到同名位置会立刻杀掉整个 Node 进程；
- * - 测试随后重新启动进程，检查已经提交的数据和待恢复任务是否符合预期
+ * - 清除该变量后重新启动进程，手动检查已提交数据和待恢复任务
  *
  * 用 SIGKILL，而不是 process.exit()：SIGKILL 不给 finally、exit 回调或 Storage 清理/补写的机会，
  * 才接近断电、进程被系统强杀等“突然中断”的场景。
@@ -15,7 +15,7 @@
  */
 export const CRASH_POINTS = [
   "after-submit", // 输入已被接收/提交后
-  "during-tool", // 工具正在执行，但尚未得到最终结果时
+  "during-tool", // 工具副作用完成，但结果尚未提交时
   "after-tool-result", // 工具结果已写入后
   "mid-generation", // 模型回答还在流式生成时
   "between-phases", // 一个 task phase 结束、下一个 phase 尚未开始时
@@ -29,9 +29,12 @@ export type CrashPointName = (typeof CRASH_POINTS)[number]
 /**
  * 配置的崩溃检查点
  */
-export function configuredCrashPoint(env: NodeJS.ProcessEnv = process.env): string | undefined {
+export function configuredCrashPoint(env: NodeJS.ProcessEnv = process.env): CrashPointName | undefined {
   const value = env.PI_CRASH_POINT?.trim()
-  return value === undefined || value === "" ? undefined : value
+  if (value === undefined || value === "") return undefined
+  const point = CRASH_POINTS.find(point => point === value)
+  if (point === undefined) throw new Error(`未知 PI_CRASH_POINT：${value}`)
+  return point
 }
 
 /**

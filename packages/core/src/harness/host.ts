@@ -14,6 +14,9 @@ import type {
 // chord 里的一种“只发布”的复制状态：不负责计算，只把外部数据源每次提交产生的新版本原样发布出去；读者可只读观测其最新版本，并按顺序收到变化通知。
 import type { AttachedReplicatedState } from "@earendil-works/chord"
 
+import { IpcError } from "@pi/shared-types"
+import type { HostStatus } from "@pi/shared-types"
+
 import { openHarness, type OpenHarnessOptions } from "./open-harness.ts"
 
 export type HarnessHostOptions = OpenHarnessOptions & {
@@ -31,6 +34,8 @@ export class HarnessHost {
 
   // 用 `#` 而非 `readonly`：外部不该读到也不该改写它。
   #closing: Promise<void> | undefined
+  #available = true
+  #end: SessionEnd | undefined
 
   private constructor(
     input: HarnessHostOptions, // HarnessHost 配置
@@ -43,7 +48,14 @@ export class HarnessHost {
     this.storage = input.storage
     this.harness = opened.harness
     this.root = opened.root
-    this.closed = opened.closed
+    // closed 要等存储与运行中的调用收尾；先同步封住入口，不能等它结算后才禁止写入。
+    const stop = opened.harness.subscribeClose(() => { this.#available = false })
+    this.closed = opened.closed.then(end => {
+      this.#available = false
+      this.#end = end
+      stop()
+      return end
+    })
   }
 
   // 创建 harness 主机
@@ -54,6 +66,23 @@ export class HarnessHost {
     // opened：{ harness, root, closed }
     const opened = await openHarness(input.storage, input, context)
     return new HarnessHost(input, opened)
+  }
+
+  /** 不依赖已失效的存储，窗口重载后也能取得终态。 */
+  get unavailableStatus(): HostStatus | undefined {
+    if (this.#available) return undefined
+    return {
+      scheduling: this.#end?.reason === "failed" ? "failed" : "closing",
+      tasks: 0, running: 0, blocked: 0, submissions: 0,
+      ...(this.#end?.reason === "failed" ? {
+        error: { code: "SESSION_FAILED" as const, message: "存储失败，运行时已停止。请重启应用以重新打开存储；不要重复执行状态不明的工具。" },
+      } : {}),
+    }
+  }
+
+  assertAvailable(): void {
+    if (this.#available) return
+    throw new IpcError("SESSION_FAILED", this.unavailableStatus?.error?.message ?? "运行时正在关闭，不能继续操作。")
   }
 
   close(context: Context = BACKGROUND_CONTEXT): Promise<void> {

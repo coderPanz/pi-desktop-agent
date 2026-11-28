@@ -150,6 +150,11 @@ if (!gotLock) {
       runtime = await DesktopRuntime.open({
         dataDir: process.env.PI_DATA_DIR ?? app.getPath("userData"),
         publish,
+        restart: () => {
+          app.relaunch()
+          // 先让 IPC 返回确认，再经 before-quit 的正常收尾路径退出。
+          setTimeout(() => app.quit(), 100)
+        },
         appVersion: app.getVersion(),
         platform: process.platform,
         versions: {

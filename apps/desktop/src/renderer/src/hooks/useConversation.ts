@@ -46,7 +46,7 @@ export type ConversationHandle = ConversationState & {
 }
 
 
-export function useConversation(conversationId: ConversationId | undefined): ConversationHandle {
+export function useConversation(conversationId: ConversationId | undefined, enabled = true): ConversationHandle {
   /**
    * 会话状态
    * {
@@ -108,8 +108,10 @@ export function useConversation(conversationId: ConversationId | undefined): Con
     // 没会话可重连 / 已经有一次在路上：都不再发
     if (id === undefined || resyncing.current) return
     resyncing.current = true
-    void open(id, generation.current, true)
+    const gen = generation.current
+    void open(id, gen, true)
       .catch((error: unknown) => {
+        if (gen !== generation.current) return
         setState(prev => ({ ...prev, error: errorText(error) }))
       })
       .finally(() => {
@@ -122,7 +124,9 @@ export function useConversation(conversationId: ConversationId | undefined): Con
     generation.current += 1
     const gen = generation.current
     // 更新当前会话 id
-    currentId.current = conversationId
+    currentId.current = enabled ? conversationId : undefined
+    // 保留最后一份已提交副本，但停止订阅、重连，并作废所有在途响应。
+    if (!enabled) return
 
     if (conversationId === undefined) {
       setState(EMPTY)
@@ -161,7 +165,7 @@ export function useConversation(conversationId: ConversationId | undefined): Con
         return { ...prev, seq: frame.seq, snapshot: next }
       })
     })
-  }, [conversationId, open, resyncNow])
+  }, [conversationId, enabled, open, resyncNow])
 
   return { ...state, resync: resyncNow }
 }

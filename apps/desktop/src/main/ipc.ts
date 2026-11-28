@@ -13,6 +13,7 @@ import type { DesktopRuntime } from "./runtime.ts"
 const CHANNEL_LIST = [
   "app.info", // 应用与环境信息；
   "app.status", // 宿主状态
+  "app.restart", // 宿主失效后重启应用
   "conv.list", // 会话列表-含忙碌与排队数
   "conv.open", // 打开会话：返回副本起点 + 起始帧号
   "conv.submission", // 最近一次用户输入的持久化状态（含终态失败）

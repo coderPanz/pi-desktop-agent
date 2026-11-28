@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 
-import { submissionFailure } from "@pi/shared-types"
+import { hostUnavailable, submissionFailure } from "@pi/shared-types"
 import type { ConversationId } from "@pi/shared-types"
 
 import { ApprovalBar } from "./components/ApprovalBar.tsx"
@@ -8,6 +8,7 @@ import { Composer } from "./components/Composer.tsx"
 import { ConversationTree } from "./components/ConversationTree.tsx"
 import { Icon } from "./components/Icon.tsx"
 import { MessageList } from "./components/MessageList.tsx"
+import { HostFailureBanner } from "./components/HostFailureBanner.tsx"
 import {
   compactionFailure,
   generationFailure,
@@ -15,7 +16,7 @@ import {
   queuedItems,
   toolSlots,
 } from "./docs.ts"
-import { invoke } from "./ipc.ts"
+import { invoke, IpcCallError } from "./ipc.ts"
 import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
 import { useApprovals, useHost } from "./hooks/useHost.ts"
@@ -25,6 +26,7 @@ import { useSubmission } from "./hooks/useSubmission.ts"
 export function App() {
   // 获取应用信息和状态，host.status 左侧会话列表的汇总信息
   const host = useHost()
+  const unavailable = hostUnavailable(host.status)
   // 当前活动会话的 id【界面： 左侧会话列表的“选中项”】相当于整个界面的数据源指针
   const [selected, setSelected] = useState<ConversationId | undefined>(
     undefined,
@@ -38,11 +40,11 @@ export function App() {
     new Set(),
   )
   // 对话内容、流式生成的状态
-  const conversation = useConversation(selected)
+  const conversation = useConversation(selected, !unavailable)
   // 当前会话还有哪些工具调用在等你批准」
-  const approvals = useApprovals(selected)
+  const approvals = useApprovals(selected, !unavailable)
   // 用于追踪：用户发出去的指令 的生命周期
-  const submission = useSubmission(selected)
+  const submission = useSubmission(selected, !unavailable)
 
   // react 使用的是【引用比较】底层为 Object.is
   /**
@@ -80,7 +82,7 @@ export function App() {
   // 会话只读副本
   const snapshot = conversation.snapshot
   // 会话是否正忙
-  const running = snapshot !== undefined && isRunning(snapshot)
+  const running = !unavailable && snapshot !== undefined && isRunning(snapshot)
   // 正在自动重试的生成失败（来自快照的 pi.live.generation.retry）
   const retryFailure =
     snapshot === undefined ? undefined : generationFailure(snapshot)
@@ -105,7 +107,7 @@ export function App() {
   // 「最近」只放已经开始过的会话：有第一条用户消息就有标题；空草稿等发了再说
   const recent = host.conversations.filter((item) => item.title !== undefined)
   // 「新建会话」只在动作在飞时置灰；当前会话还是空草稿时按钮照旧可点，只是点了不再新建（见 create）
-  const createDisabled = busyAction !== undefined
+  const createDisabled = unavailable || busyAction !== undefined
 
   /**
    * 所有动作都走同一个错误出口：失败只提示，不改界面状态。这里不需要 useCallback 其实也行
@@ -113,17 +115,21 @@ export function App() {
    */
   const run = useCallback(
     async (label: string, action: () => Promise<void>) => {
+      if (unavailable && label !== "重启") return
       setBusyAction(label)
       setError(undefined)
       try {
         await action()
       } catch (cause) {
+        if (cause instanceof IpcCallError && cause.code === "SESSION_FAILED") {
+          await host.checkHealth().catch(() => {})
+        }
         setError(cause instanceof Error ? cause.message : String(cause))
       } finally {
         setBusyAction(undefined)
       }
     },
-    [],
+    [unavailable, host.checkHealth],
   )
 
   const send = (text: string): void => {
@@ -255,6 +261,9 @@ export function App() {
         }
       />
 
+      <HostFailureBanner status={host.status} restarting={busyAction === "重启"} onRestart={() => {
+        void run("重启", host.restart)
+      }} />
       {error === undefined ? null : (
         <Banner tone="error" onDismiss={() => setError(undefined)}>
           {error}
@@ -270,6 +279,7 @@ export function App() {
         <Banner tone="warn">压缩失败：{compactionError}</Banner>
       )}
 
+      <fieldset disabled={unavailable} className="contents" aria-label="会话与工具操作">
       <div className="grid min-h-0 flex-1 grid-cols-[264px_minmax(0,1fr)]">
         <aside
           aria-label="会话侧栏"
@@ -388,13 +398,14 @@ export function App() {
             queued={queued}
           />
           <Composer
-            disabled={selected === undefined}
+            disabled={unavailable || selected === undefined}
             running={running}
             onSend={send}
             onAbort={abort}
           />
         </section>
       </div>
+      </fieldset>
     </main>
   )
 }

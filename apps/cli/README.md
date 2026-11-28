@@ -103,20 +103,14 @@ pnpm smoke                                 # 管道喂几条命令的端到端�
 
 栈不直接泼给用户，`PI_LOG_LEVEL=debug` 时才打 `error.stack`。
 
-## 测试
+## 验收
 
 ```bash
-pnpm test        # 其中 apps/cli/src/**/*.test.ts 共 36 条
-pnpm typecheck   # 含 apps/desktop/tsconfig.json
-pnpm lint        # 「cli 禁 electron」在这里生效
+pnpm typecheck && pnpm lint && pnpm smoke && pnpm build
 ```
 
-| 文件 | 覆盖 |
-|---|---|
-| `args.test.ts` | 默认 REPL 与 `.data`、`--memory` / `--data-dir` 互斥、数字参数校验、`-h` 优先级、未知参数报错 |
-| `commands.test.ts` | 空行忽略、普通文本转 `send`、命令大小写不敏感、不接受参数的命令、未知命令报错 |
-| `approvals.test.ts` | 队列先进先出、审批与输入同队列、重复 settle 只生效一次、关闭时审批全部拒绝且不挂住、非交互直接拒绝 |
-| `render.test.ts` | 流式只补后缀、落库后不重复打、忙但无文本时不重打上一条、整段重写换行重打、工具状态去重、坏文档不炸 |
+不维护 `.test.*`、`.spec.*` 或专用测试 fixture。按改动手动确认参数解析、审批、帧渲染与存储恢复，
+后台存储失败必须主动结束等待并退出，不能要求用户再输入一条命令才发现失效。
 
 ## 依赖方向
 
