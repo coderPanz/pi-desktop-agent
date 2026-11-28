@@ -11,6 +11,7 @@ export type ToolErrorCode =
   | "invalid_arguments"
   | "list_failed"
   | "search_failed"
+  | "write_failed"
 
 /** 一次失败的工具结果。 */
 export function toolError(code: ToolErrorCode, message: string): ToolExecutionResult {

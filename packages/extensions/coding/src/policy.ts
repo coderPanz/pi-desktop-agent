@@ -27,7 +27,7 @@ export type PolicyOptions = {
 const ALLOWED_TOOLS: ReadonlySet<string> = new Set(["read", "list_dir", "grep", "glob"])
 
 /** 需 human-in-the-loop */
-const ASKED_TOOLS: ReadonlySet<string> = new Set(["write", "edit"])
+const ASKED_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "apply_patch"])
 
 /** 危险命令-直接拒绝。 */
 const ROOT_TARGETS: ReadonlySet<string> = new Set([

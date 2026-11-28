@@ -33,6 +33,8 @@ import { toolError } from "./results.ts"
 import { createListDirTool } from "./tools/list-dir.ts"
 // 项目上下文（AGENTS.md / scripts / 顶层结构）
 import { projectContextSection } from "./context.ts"
+// 多文件一次性修改
+import { createApplyPatchTool } from "./tools/apply-patch.ts"
 // grep / glob 检索工具
 import { createGlobTool, createGrepTool } from "./tools/search.ts"
 
@@ -114,6 +116,11 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
     withPolicy(withPathGuard(createReadTool(), guard), { replay: "safe" }),
     // list_dir 工具配置
     createListDirTool({ guard }),
+    // 多文件改动：整批校验后才落盘，必须串行、不可重放
+    withPolicy(createApplyPatchTool({ guard }), {
+      replay: "unsafe",
+      executionMode: "sequential",
+    }),
     // 检索：只读、可并行、崩溃后可安全重跑
     withPolicy(createGrepTool({ guard }), { replay: "safe" }),
     withPolicy(createGlobTool({ guard }), { replay: "safe" }),

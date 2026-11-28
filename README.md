@@ -57,7 +57,11 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 
 ### 工具与审批
 
-模型能用的工具：`read`、`list_dir`、`grep`、`glob`、`write`、`edit`、`bash`。
+模型能用的工具：`read`、`list_dir`、`grep`、`glob`、`write`、`edit`、`apply_patch`、`bash`。
+
+`apply_patch` 一次改多个文件：每项给 `edits`（片段替换，`oldText` 必须唯一命中）或 `content`（整文件写入）。
+先全批校验再落盘（写临时文件 + 统一 rename），任何一项失败都不会写入任何文件；rename 阶段失败会回滚。
+工具只返回改了哪些文件，具体 diff 由「本轮改动」卡片统一用 git 现算。
 
 ### 项目上下文
 
