@@ -21,6 +21,7 @@ import type {
   IpcResponse,
   IpcResult,
   JsonObject,
+  ModelSettingsView,
   OpenedView,
   WhenBusy,
 } from "@pi/shared-types"
@@ -31,6 +32,7 @@ import { inspectHarness } from "../diagnostics/inspect.ts"
 import type { FrameHub } from "../frames/frame-hub.ts"
 import type { SessionManager } from "../session/manager.ts"
 import type { HarnessHost } from "../harness/host.ts"
+import type { ModelSettings } from "../agent/model-settings.ts"
 
 // 路由配置选项
 export type IpcRouterOptions = {
@@ -41,6 +43,8 @@ export type IpcRouterOptions = {
   readonly info: HostInfo // 宿主信息
   readonly host: HarnessHost
   readonly restart?: () => void | Promise<void>
+  /** 模型配置服务；没传则 model.* 通道直接报不支持。 */
+  readonly models?: ModelSettings
 }
 
 export class IpcRouter {
@@ -51,6 +55,7 @@ export class IpcRouter {
   readonly #info: HostInfo
   readonly #host: HarnessHost
   readonly #restart: IpcRouterOptions["restart"]
+  readonly #models: ModelSettings | undefined
   #restarting: Promise<void> | undefined
 
   constructor(options: IpcRouterOptions) {
@@ -61,6 +66,7 @@ export class IpcRouter {
     this.#info = options.info
     this.#host = options.host
     this.#restart = options.restart
+    this.#models = options.models
   }
 
   /** 处理渲染进程发过来的命令 */
@@ -126,6 +132,33 @@ export class IpcRouter {
         })
         await this.#restarting
         return {} as IpcResponse<K>
+      }
+
+      // 获取模型配置
+      case "model.get": {
+        return (await this.#modelView()) as IpcResponse<K>
+      }
+
+      // 保存模型配置：先写文档与密钥，再换模型集合；只影响新会话
+      case "model.save": {
+        const models = this.#requireModels()
+        const modelId = requiredText(input, "modelId")
+        const baseUrl = optionalText(input, "baseUrl")
+        const apiKey = optionalText(input, "apiKey")
+        const saved = await models.save({ modelId, baseUrl, apiKey }, context)
+        const model = saved?.source === "settings"
+          ? { provider: "gateway", modelId: saved.modelId }
+          : undefined
+        this.#manager.setDefaultModel(model)
+        // 空模型的旧会话（含根会话）补一次默认模型；已有模型一律不动。
+        await this.#manager.backfillModel(context)
+        return (await this.#modelView()) as IpcResponse<K>
+      }
+
+      // 清除应用内保存的密钥
+      case "model.clearKey": {
+        await this.#requireModels().clearKey()
+        return (await this.#modelView()) as IpcResponse<K>
       }
 
       // 获取会话列表
@@ -321,6 +354,28 @@ export class IpcRouter {
   }
 
   /** 按 id 取会话句柄；不存在就是 NOT_FOUND，而不是笼统的「参数错误」。 */
+  #requireModels(): ModelSettings {
+    if (this.#models === undefined) throw new IpcError("UNKNOWN", "当前宿主未配置模型设置服务。")
+    return this.#models
+  }
+
+  /** 给界面的视图：密钥只说有无，不回传值；env 生效时锁定编辑。 */
+  async #modelView(): Promise<ModelSettingsView> {
+    const models = this.#models
+    if (models === undefined) {
+      return { modelId: undefined, baseUrl: undefined, source: "none", key: { stored: false, env: false }, locked: false }
+    }
+    const snapshot = models.snapshot()
+    const key = await models.keyState()
+    return {
+      modelId: snapshot?.modelId,
+      baseUrl: snapshot?.baseUrl,
+      source: snapshot?.source ?? "none",
+      key,
+      locked: snapshot?.source === "env",
+    }
+  }
+
   async #conversation(id: ConversationId, context: Context): Promise<Conversation> {
     const conversation = await this.#harness.conversation(id, context)
     if (conversation === undefined) throw new IpcError("NOT_FOUND", `会话不存在：${String(id)}`)

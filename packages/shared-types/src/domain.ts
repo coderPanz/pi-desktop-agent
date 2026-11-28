@@ -97,3 +97,14 @@ export type HostInfo = {
   /** 当前配置好的模型；没配就是 undefined。 */
   readonly model: { readonly provider: string; readonly modelId: string } | undefined
 }
+
+/** 模型配置在界面上的形状；密钥永远不回传，只说有没有。 */
+export type ModelSettingsView = {
+  readonly modelId: string | undefined
+  readonly baseUrl: string | undefined
+  /** env = 环境变量固定生效；settings = 应用内配置；none = 尚未配置。 */
+  readonly source: "env" | "settings" | "none"
+  readonly key: { readonly stored: boolean; readonly env: boolean }
+  /** 环境变量优先时界面不允许改配置，避免“改了不生效”。 */
+  readonly locked: boolean
+}

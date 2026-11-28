@@ -1,7 +1,7 @@
 /**
  * IPC ：渲染进程通过该层调用主进程的方法
  */
-import type { ApprovalDecision, ApprovalView, ConversationSummary, HostInfo, HostStatus } from "./domain.ts"
+import type { ApprovalDecision, ApprovalView, ConversationSummary, HostInfo, HostStatus, ModelSettingsView } from "./domain.ts"
 import type { IpcErrorPayload } from "./errors.ts"
 import type { ConversationId, EntryId, OpenedView } from "./frame.ts"
 import type { JsonObject } from "./json.ts"
@@ -25,6 +25,25 @@ export type IpcMap = {
   "app.restart": {
     readonly request: Record<string, never>
     readonly response: Record<string, never>
+  }
+  /** 当前模型配置；密钥只报有无，不回传值。 */
+  "model.get": {
+    readonly request: Record<string, never>
+    readonly response: ModelSettingsView
+  }
+  /** 保存模型配置；apiKey 留空则不改动已保存的密钥。 */
+  "model.save": {
+    readonly request: {
+      readonly modelId: string
+      readonly baseUrl?: string
+      readonly apiKey?: string
+    }
+    readonly response: ModelSettingsView
+  }
+  /** 清除应用内保存的密钥（环境变量仍可回退）。 */
+  "model.clearKey": {
+    readonly request: Record<string, never>
+    readonly response: ModelSettingsView
   }
   /** 会话列表 */
   "conv.list": {

@@ -9,6 +9,7 @@ import { ConversationTree } from "./components/ConversationTree.tsx"
 import { Icon } from "./components/Icon.tsx"
 import { MessageList } from "./components/MessageList.tsx"
 import { HostFailureBanner } from "./components/HostFailureBanner.tsx"
+import { ModelSettingsDialog } from "./components/ModelSettingsDialog.tsx"
 import {
   compactionFailure,
   generationFailure,
@@ -19,6 +20,7 @@ import {
 import { invoke, IpcCallError } from "./ipc.ts"
 import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
+import { useModelSettings } from "./hooks/useModelSettings.ts"
 import { useApprovals, useHost } from "./hooks/useHost.ts"
 import { useNow } from "./hooks/useNow.ts"
 import { useSubmission } from "./hooks/useSubmission.ts"
@@ -27,6 +29,9 @@ export function App() {
   // 获取应用信息和状态，host.status 左侧会话列表的汇总信息
   const host = useHost()
   const unavailable = hostUnavailable(host.status)
+  // 模型配置（密钥不回显）；保存后只影响新建会话
+  const modelSettings = useModelSettings(host.loaded)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // 当前活动会话的 id【界面： 左侧会话列表的“选中项”】相当于整个界面的数据源指针
   const [selected, setSelected] = useState<ConversationId | undefined>(
     undefined,
@@ -252,14 +257,26 @@ export function App() {
       <Header
         platform={host.info?.platform}
         node={host.info?.node}
-        model={host.info?.model?.modelId}
+        model={modelSettings.view?.modelId ?? host.info?.model?.modelId}
         scheduling={host.status?.scheduling}
+        source={modelSettings.view?.source}
+        onOpenSettings={() => setSettingsOpen(true)}
         modelHint={
-          host.info?.model === undefined
-            ? "未配置模型：请设置 ANTHROPIC_* 环境变量"
+          modelSettings.view?.modelId === undefined && host.info?.model === undefined
+            ? "未配置模型：打开设置填写模型与密钥"
             : undefined
         }
       />
+
+      {settingsOpen ? (
+        <ModelSettingsDialog
+          view={modelSettings.view}
+          disabled={unavailable}
+          onClose={() => setSettingsOpen(false)}
+          onSave={modelSettings.save}
+          onClearKey={modelSettings.clearKey}
+        />
+      ) : null}
 
       <HostFailureBanner status={host.status} restarting={busyAction === "重启"} onRestart={() => {
         void run("重启", host.restart)
@@ -415,7 +432,9 @@ function Header(props: {
   readonly node: string | undefined
   readonly model: string | undefined
   readonly scheduling: string | undefined
+  readonly source: "env" | "settings" | "none" | undefined
   readonly modelHint: string | undefined
+  readonly onOpenSettings: () => void
 }) {
   return (
     <header className="pi-titlebar flex min-h-16 shrink-0 items-center gap-6 border-b border-divider bg-toolbar px-6 py-2 backdrop-blur-xl">
@@ -438,7 +457,7 @@ function Header(props: {
         {props.model === undefined ? null : (
           <span
             className="flex items-center gap-1.5 rounded-lg border border-divider bg-surface/70 px-2.5 py-1.5 text-[12px] text-secondary"
-            title={props.model}
+            title={`${props.model}${props.source === "env" ? "（环境变量）" : props.source === "settings" ? "（应用配置）" : ""}`}
           >
             <Icon name="model" className="size-3.5 text-tertiary" />
             <span className="pi-model-label max-w-56 truncate">
@@ -446,6 +465,14 @@ function Header(props: {
             </span>
           </span>
         )}
+        <button
+          className="flex items-center gap-1.5 rounded-lg border border-divider bg-surface/70 px-2.5 py-1.5 text-[12px] text-secondary hover:bg-surface hover:text-accent"
+          onClick={props.onOpenSettings}
+          title="模型与密钥设置"
+        >
+          <Icon name="gear" className="size-3.5 text-tertiary" />
+          模型
+        </button>
         {props.scheduling === undefined ? null : (
           <span className="flex items-center gap-1.5 text-[11px] text-secondary">
             <span

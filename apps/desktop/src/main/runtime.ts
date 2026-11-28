@@ -5,11 +5,9 @@ import path from "node:path"
 
 import type { Context } from "@earendil-works/chord"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
-import type { AgentChange } from "@earendil-works/pi-durable"
-import type { Models } from "@earendil-works/pi-ai"
+import { createModels, type Models } from "@earendil-works/pi-ai"
 import {
   ApprovalBroker,
-  createModelRegistry,
   createNodeEnvFactory,
   createPiRegistry,
   createConversationPurge, // 删除会话记录
@@ -18,10 +16,10 @@ import {
   DEFAULT_APPROVAL_TIMEOUT_MS,
   ensureWorkspacePaths,
   FrameHub,
-  gatewayConfigFromEnv,
   HarnessHost,
   IpcRouter,
   materializeSubmission,
+  ModelSettings,
   PROVIDER_ID,
   sandboxModeFromEnv,
   sandboxNetworkFromEnv,
@@ -33,6 +31,8 @@ import {
 import type { ApprovalContext, ApprovalRequest } from "@pi/ext-coding"
 import { createCodingExtension } from "@pi/ext-coding"
 import type { HostInfo, PushMap, PushChannel, ViewFrame } from "@pi/shared-types"
+
+import { createSafeStorageSecret } from "./secret-store.ts"
 
 // 桌面端运行时配置
 export type DesktopRuntimeOptions = {
@@ -161,9 +161,11 @@ export class DesktopRuntime {
       ],
     })
 
-    // 模型按需创建：没配凭证也能开窗，只是发消息时才报 ConfigError。
-    let models: Models | undefined
-    const resolveModels = (): Models => (models ??= createModelRegistry())
+    // 模型设置：配置从 app.settings 读，密钥经 safeStorage 加密存文件。
+    // Harness 的 models 先返回空集合，等 warm() 完成后再换成真实网关。
+    const fallbackModels = createModels()
+    const modelRef: { current?: ModelSettings } = {}
+    const resolveModels = (): Models => modelRef.current?.current() ?? fallbackModels
 
     // 创建 Harness 主机： 整体 harness 流程
     const host = await HarnessHost.open({
@@ -173,9 +175,15 @@ export class DesktopRuntime {
       // 创建了 node 环境，用于执行 bash 命令
       env: createNodeEnvFactory({ workspace: paths.workspace }),
       settings: () => ({ progress: { partialIntervalMs: 100 } }),
-      ...initialAgent(),
       log,
     })
+
+    // 配置就绪后 Harness 才拿得到真实模型；没配置时仍可开窗，发消息会报 no_model。
+    modelRef.current = new ModelSettings({
+      harness: host.harness,
+      secret: createSafeStorageSecret(path.join(paths.root, "model-key.bin")),
+    })
+    const active = await modelRef.current.warm(BACKGROUND_CONTEXT)
 
     // 创建会话管理器： 用于管理会话状态
     const manager = await SessionManager.open({
@@ -188,6 +196,9 @@ export class DesktopRuntime {
       onTitle: (conversationId, title) =>
         publish("conv.title", { conversationId, title }),
     })
+    // 新会话跟随已生效的配置；旧版本空模型会话补一次默认模型（不覆盖已有选择）。
+    manager.setDefaultModel(active === undefined ? undefined : { provider: PROVIDER_ID, modelId: active.modelId })
+    await manager.backfillModel(BACKGROUND_CONTEXT)
 
     // 创建帧管理器： 用于管理会话帧
     const hub = new FrameHub(host.harness, {
@@ -243,6 +254,7 @@ export class DesktopRuntime {
       info,
       host,
       restart: options.restart,
+      models: modelRef.current,
     })
 
     log("registry", summarizeRegistry(registry.snapshot()))
@@ -251,6 +263,7 @@ export class DesktopRuntime {
       dataDir: paths.root,
       // 排障：命令被拦时先看这一行（PI_SANDBOX / PI_SANDBOX_NET）
       sandbox: `${sandboxModeFromEnv()}/${sandboxNetworkFromEnv()}`,
+      model: active === undefined ? "none" : `${active.modelId}(${active.source})`,
     })
 
     return new DesktopRuntime({
@@ -305,19 +318,5 @@ export class DesktopRuntime {
   publishStatus(status: PushMap["host.status"]): void {
     // 已失效的宿主不能被迟到的健康度查询或普通关机通知覆盖。
     this.#publish("host.status", this.host.unavailableStatus ?? status)
-  }
-}
-
-/** 从环境读模型配置；缺变量就返回 undefined，不拦启动。 */
-function initialAgent(): { agent?: AgentChange } {
-  const modelId = readGatewayConfig()
-  return modelId === undefined ? {} : { agent: { model: { provider: PROVIDER_ID, modelId } } }
-}
-
-function readGatewayConfig(): string | undefined {
-  try {
-    return gatewayConfigFromEnv().modelId
-  } catch {
-    return undefined
   }
 }

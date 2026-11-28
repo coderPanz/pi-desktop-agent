@@ -356,19 +356,48 @@ export class SessionManager {
     context: Context = BACKGROUND_CONTEXT,
     options: { readonly agent?: AgentChange } = {},
   ): Promise<Conversation> {
-    // 根会话还在就用它当前的模型（用户可能改过），不在就退回开机时记住的默认模型。
+    // 应用内保存的配置优先；开机时它与 root 模型一致，只有用户主动保存后才改变。
     const rootAgent = await this.#harness.snapshot(AgentDoc, ROOT_CONVERSATION_ID, context)
     return await this.#harness.createConversation(
       {
         ownership: { kind: "ownerless" },
-        // SDK 的 ownerless 会话从空 agent 开始；模型默认取 root，显式覆盖（含 null）优先。
+        // SDK 的 ownerless 会话从空 agent 开始；新会话用默认模型，显式覆盖（含 null）优先。
         agent: {
           ...options.agent,
-          model: options.agent?.model === undefined ? (rootAgent?.model ?? this.#defaultModel) : options.agent.model,
+          model: options.agent?.model === undefined
+            ? (this.#defaultModel ?? rootAgent?.model)
+            : options.agent.model,
         },
       },
       context,
     )
+  }
+
+  /** 用户保存模型配置后调：只影响之后新建的会话，已有会话保持原模型。 */
+  setDefaultModel(model: AgentChange["model"]): void {
+    this.#defaultModel = model
+  }
+
+  /**
+   * 给缺模型的旧会话补默认模型（不覆盖已有选择）。
+   * 旧版本留下的非 root 空模型会话否则永远发不出消息。
+   */
+  async backfillModel(context: Context = BACKGROUND_CONTEXT, limit = 200): Promise<number> {
+    const model = this.#defaultModel
+    if (model == null) return 0
+    const page = await this.#storage.scanConversations({ order: "descending" }, limit, undefined, context)
+    let filled = 0
+    for (const record of page.items) {
+      // 根会话也补：它启动时可能还没有模型（例如刚填完设置），但仍然只填空值。
+      const agent = await this.#harness.snapshot(AgentDoc, record.id, context)
+      if (agent?.model !== undefined) continue
+      await this.#harness.commit(async tx => {
+        const doc = await tx.doc(AgentDoc, record.id)
+        if (doc.model === undefined) doc.model = { ...model }
+      }, context)
+      filled += 1
+    }
+    return filled
   }
 
   /**

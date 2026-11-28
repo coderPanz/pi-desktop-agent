@@ -1,4 +1,4 @@
-type IconName = "sparkles" | "message" | "plus" | "branch" | "compress" | "reset" | "arrow-up" | "stop" | "check" | "chevron" | "tool" | "shield" | "alert" | "model" | "refresh" | "trash" | "more" | "pin" | "pencil"
+type IconName = "sparkles" | "message" | "plus" | "branch" | "compress" | "reset" | "arrow-up" | "stop" | "check" | "chevron" | "tool" | "shield" | "alert" | "model" | "refresh" | "trash" | "more" | "pin" | "pencil" | "close" | "gear"
 
 const PATHS: Record<IconName, string> = {
   sparkles: "M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3z M4 3v4M2 5h4 M21 18v4M19 20h4",
@@ -20,6 +20,8 @@ const PATHS: Record<IconName, string> = {
   more: "M6 12h.01 M12 12h.01 M18 12h.01",
   pin: "M9 3h6 M12 3v8 M8 11h8l-2 5H10l-2-5z M12 16v5",
   pencil: "M4 20h4l10-10-4-4L4 16v4z M14 6l4 4",
+  close: "M6 6l12 12 M18 6L6 18",
+  gear: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.2a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.2a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.2a1.7 1.7 0 00-1.4 1z"
 }
 
 /**

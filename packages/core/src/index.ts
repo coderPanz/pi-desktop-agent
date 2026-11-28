@@ -37,6 +37,14 @@ export {
   type GatewayConfig,
   type GatewayModel,
 } from "./agent/models.ts"
+export {
+  ModelSettings,
+  type ModelConfigSource,
+  type ModelSettingsOptions,
+  type ModelSettingsSaveInput,
+  type ModelSettingsSnapshot,
+  type SecretStore,
+} from "./agent/model-settings.ts"
 export { createNodeEnv, createNodeEnvFactory, type NodeEnvOptions } from "./agent/env.ts"
 export {
   sandboxModeFromEnv,

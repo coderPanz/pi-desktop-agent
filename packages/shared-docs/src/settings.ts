@@ -14,6 +14,8 @@ export type AppSettings = {
   locale: AppLocale
   /** 用户显式选择的模型；缺省时沿用会话 agent 里的配置。 */
   model?: { provider: string; modelId: string }
+  /** 应用内配置的网关地址；缺省用默认地址。 */
+  baseUrl?: string
   /** 每次生成都显示工具调用的完整输出，而不是折叠的分片。 */
   verboseTools: boolean
 }

@@ -49,6 +49,7 @@ export type {
   ConversationSummary,
   HostInfo,
   HostStatus,
+  ModelSettingsView,
   ToolInfo,
   ToolStatus,
 } from "./domain.ts"
