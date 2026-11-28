@@ -6,6 +6,11 @@
 
 ### 新增
 
+- 检索工具 `grep` / `glob`：只读、`replay: safe`、默认放行。只遍历工作区并跳过依赖/构建目录与软链，
+  跳过二进制与超过 512KB 的文件，默认字面子串（`regex: true` 才当正则），结果有上限并给出扫描统计
+- 命令 PATH 自动补常见安装位置（Homebrew、`~/.local/bin`、nvm/fnm 各版本、`~/Library/pnpm` 等，仅已存在目录）：
+  从 Finder 启动的打包应用也能找到 `node` / `pnpm`，且仍然不执行任何 rc 脚本
+
 - 工具结果支持「复制路径 / 打开文件」：历史工具结果行与运行中的工具卡都会显示调用参数里的路径；
   打开走主进程 `shell.openPath`，先按真实路径校验必须落在工作区内（拒绝绝对越界、`..` 与软链逃逸）
 - 复制走主进程 `clipboard.copy`（Electron `clipboard.writeText`），不再依赖 `file://` 下不可靠的 Clipboard API
@@ -125,6 +130,10 @@
 
 ### 变更
 
+- `grep` / `glob` 检索优化：字面量走「整段文本找位置」不再逐行 `split`，同一行只报一次；
+  文件读取按 16 个并发分批（顺序不变，结果仍确定）；新增工作区根 `.gitignore` 支持（不支持 `!` 取反与嵌套文件）。
+  本地基准（2001 文件 / 约 3MB）：无命中 149ms → 57ms，字面量多命中 90ms → 49ms
+
 - 内容区宽度改为统一变量 `--pi-content-max`：默认 960px，≥1440px 视口 1120px，≥1800px 视口 1280px；
   消息列表、输入框、审批条共用同一宽度（原 760px 固定值在宽窗口下两侧留白过多）
 
@@ -203,6 +212,10 @@
 
 - 清除应用内密钥后立即重建模型集合：之前会清空注册表，导致后续生成报“模型配置尚未就绪”，
   必须重启才能恢复。打包验收时发现该问题并修复
+- 打包修复：产物把生产 `node_modules` 打进 asar。此前主进程保留 `@earendil-works/*` 为外部依赖、
+  asar 又排除 `node_modules`，导致应用只能“借用”仓库依赖——在 `release/mac-arm64` 能跑，拷到其它目录即
+  `MODULE_NOT_FOUND`（进程活着但不进主进程、无日志）。修复后从仓库外启动、真实对话均通过
+- 打包：`pnpm package` 产出 `.app` + `.dmg`；DMG 挂载与结构正确
 - 打包：新增 `package:dir`（只出 `.app`）与 `npmRebuild: false`，约 2 分钟；产物内已复验 `node:sqlite`、
   safeStorage、Seatbelt、无 `.env` 首次配置、真实对话与 clearKey 后继续生成。DMG 因 dmgbuild 下载超时未产出
 

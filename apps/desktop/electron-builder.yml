@@ -8,10 +8,12 @@ directories:
   output: release
   buildResources: assets
 
+# 主进程保留 @earendil-works/* 为外部依赖（内联会破坏它们的 ESM 循环引用），
+# 所以必须把生产依赖一起打进 asar，否则打包后只能“借用”仓库里的 node_modules。
 files:
   - dist/**/*
   - package.json
-  - "!node_modules/**/*"
+  - node_modules/**/*
 
 asar: true
 
@@ -22,7 +24,10 @@ mac:
   target:
     - dmg
   category: public.app-category.developer-tools
+  # 由 assets/make-icon.py 生成，同样文件也满足 buildResources 自动探测
+  icon: assets/icon.icns
 
 win:
   target:
     - nsis
+  icon: assets/icon.ico

@@ -20,7 +20,7 @@
 | 界面余项（错误重试按钮、快捷操作、滚动细节） | ⬜ | 会话标题与时间已实现；其他见 §2.2 |
 | 宿主失效闭环 | ✅ 已实测 | 关闭开始就禁止 IPC 操作，失败快照可查询；桌面保留已有副本并提供重启入口，CLI 主动退出。真实 Electron 实测：提交触发存储失败 → 告警 + 输入禁用 + 主进程拒绝读写；点重启后进程真正重建，告警消失、读写恢复 |
 | 崩溃恢复埋点与实测 | ✅ 本地与远程均已验 | 五个检查点已接入真实提交/工具钩子；本地模型 + SQLite 的 SIGKILL 恢复和旧 write/edit/bash 调用不重放已验证；真实远程模型下流式强杀也已实测：partial 保留为 `aborted` 条目、续跑给出完整回答、无重复输入、任务终态、`pi.live` 清空。安装包内恢复仍待打包验收 |
-| 打包 | ✅ 应用产物 | `pnpm package:dir` 约 2 分钟：`.app` 内 `node:sqlite`、safeStorage、Seatbelt、首次配置、真实对话、clearKey 后继续生成均通过；DMG 受网络限制未产出（发布时再出） |
+| 打包 | ✅ 含安装验收 | `pnpm package` 出 `.app` + `.dmg`（缓存后约 10–13s）。产物内已验：`node:sqlite`、safeStorage、Seatbelt、首次配置、真实对话、clearKey、失效提示 + 重启恢复；把 App 拷到仓库外仍能启动并真实回答（已修「借用仓库 node_modules」的问题） |
 
 ## 2. 待办（按依赖顺序）
 
@@ -55,7 +55,10 @@
 真实远程模型验证时需把 `--partial-interval-ms` 调小并把输出拉长，否则回答太快、partial 来不及落库就不会命中该检查点。
 打包冒烟结论：`pnpm package:dir`（关掉依赖重建、只出 `.app`）约 2 分钟。产物内已验证
 `node:sqlite`、safeStorage 加密、Seatbelt、无 `.env` 首次配置、真实对话，以及清除密钥后继续生成。
-剩余：打包产物内的存储失效提示/重启入口未复验；DMG 因下载 dmgbuild 超时未产出，待网络可用时补。
+打包与安装验收通过。此前的「拷出后不进主进程」不是签名问题，而是产物缺依赖：
+主进程把 `@earendil-works/*` 留在外部，asar 里又排除了 `node_modules`，等于只能“借用”仓库里的依赖
+（在 `release/mac-arm64` 里能跑，拷走就 `MODULE_NOT_FOUND`）。已改为把生产依赖打进 asar，仓库外启动正常。
+剩余：签名/公证（当前 adhoc，拷贝后 `codesign --verify` 报 resources 缺失）、`pnpm gate` 之外的安装包系统级验收。
 
 ### 2.4 后续能力（可与界面并行）
 

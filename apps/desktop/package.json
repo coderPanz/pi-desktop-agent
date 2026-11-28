@@ -2,6 +2,8 @@
   "name": "@pi/desktop",
   "version": "0.0.0",
   "private": true,
+  "description": "本机 Agent 工作台：对话、工具执行、知识沉淀、界面状态全部落在可恢复的本地存储里",
+  "author": "panqizhong <panqizhong@tal.com>",
   "type": "module",
   "main": "./dist/main/index.mjs",
   "scripts": {

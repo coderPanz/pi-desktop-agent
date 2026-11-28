@@ -17,7 +17,7 @@
 | 持久化与重启恢复（SQLite + WAL） | ✅ 普通重启及本地模型下的真实进程强杀恢复已验证；未完成模型请求可能重新发起，未知结果的旧写入/bash 调用不自动重放 |
 | 帧协议与副本同步（`FrameHub` → `ViewFrame` / `ViewSnapshot`） | ✅ CLI 与桌面均已接入 |
 | 契约（IPC / 推送 / 错误码 / `app.*` 文档） | ✅ 代码里，见 `packages/shared-types`、`packages/shared-docs` |
-| 工具（读 / 列目录 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展，CLI 与桌面均可审批 |
+| 工具（读 / 列目录 / 检索 / 写 / 改 / bash + 三档审批） | ✅ `coding` 扩展：`read` `list_dir` `grep` `glob` `write` `edit` `bash`，CLI 与桌面均可审批 |
 | 桌面接线（Harness / IPC / 帧推送 / 审批） | ✅ root 会话已跑通真实模型与工具审批 |
 | 聊天界面（消息、工具卡、审批、排队、流式、Markdown） | ✅ Apple 风格浅色工作区；代码块用 Shiki 高亮（带语言标签与复制）；状态刷新与体验细节待补 |
 | 会话管理（新建 / 分叉 / 压缩 / 重置 / 删除） | ✅ 侧栏第一行是「新建会话」，下面「最近」按活跃时间倒序（行右侧显示时间节点），按分叉关系显示为树、可折叠；行标题是第一条用户消息（超 10 字后台摘要一次，可手动重命名）；空会话不进列表（发第一条消息才带出）；行尾「…」菜单删除 / 置顶 / 重命名，删除是物理删除（不可恢复） |
@@ -57,7 +57,14 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 
 ### 工具与审批
 
-模型能用的工具：`read`、`list_dir`、`write`、`edit`、`bash`。
+模型能用的工具：`read`、`list_dir`、`grep`、`glob`、`write`、`edit`、`bash`。
+
+`grep` / `glob` 是只读检索：只遍历工作区（跳过 `node_modules`、`.git`、构建产物与软链）、
+跳过二进制与超大文件，默认按字面子串匹配（`regex: true` 才当正则）。它们与 `read`/`list_dir` 一样直接放行，
+崩溃后可安全重跑。会遵守工作区**根** `.gitignore` 的常见规则（注释、目录、名字、锚定路径、`*`/`**`/`?`）；
+**不支持 `!` 取反**，嵌套 `.gitignore` 不生效——这类情况按“多扫”处理，不会漏扫。
+
+检索有上限：最多 5000 个文件、单文件 512KB、200 条结果；命中被截断时会在 `diagnostics` 里说明。
 
 工作区（`<数据根>/workspace`）是工具的根目录：相对路径按它解析，`read`/`list_dir`/`write`/`edit` 的路径必须落在它里面（越界路径与指向外面的软链一律拒绝），`bash` 的起点 cwd 也是它。
 
@@ -66,6 +73,8 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 通过软链绕出去都会被内核拒掉（`Operation not permitted`）。开关：`PI_SANDBOX=seatbelt|off`（macOS 默认开）、
 `PI_SANDBOX_NET=allow`（默认 deny）。沙箱不可用（缺 `sandbox-exec`）时**拒绝执行 bash**，不静默降级。
 命令环境只继承 PATH、HOME、语言、临时目录等运行变量，不继承宿主模型 API Key、云凭证、代理或解释器启动钩子；
+PATH 会在系统目录后补常见安装位置（Homebrew、`~/.local/bin`、nvm/fnm 各版本、`~/Library/pnpm` 等，只取真实存在的目录），
+这样从 Finder 启动的打包应用也能找到 `node` / `pnpm`，但**不执行任何 rc 脚本**；
 此过滤在 `PI_SANDBOX=off` 时也保留。Seatbelt 使用非登录 shell（zsh 加 `-f`），不自动加载用户登录配置。
 读取额外屏蔽 `~/.ssh`、`~/.aws`、`~/.gnupg`、`~/.azure`、`~/.kube`、`~/.config/gcloud`、`~/.config/gh`
 及 `.env` / `.env.*`（普通 `.env.example` 除外）；凭证目录软链的真实目标也屏蔽。
@@ -76,7 +85,7 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 
 | 档 | 工具 | 行为 |
 |---|---|---|
-| `allow` | `read`、`list_dir`、只读命令（`ls` / `cat` / `git status` …） | 直接执行 |
+| `allow` | `read`、`list_dir`、`grep`、`glob`、只读命令（`ls` / `cat` / `git status` …） | 直接执行 |
 | `ask` | `write`、`edit`、其余命令 | 终端提示 `审批请求：… 允许这一次执行吗？[y/N]`，输 `y` 放行 |
 | `deny` | 抹盘、关机、根级删除、fork 炸弹 | 不执行，给模型一条拒绝说明 |
 
@@ -225,7 +234,8 @@ CLI 会主动结束等待并以失败码退出。重启是重新打开存储，�
 - 失效恢复只支持应用重启，不做进程内热重建；重启不能自动修复磁盘满、损坏的数据库等底层问题。
 - 强杀恢复在本地模型与真实 SQLite 下验证，真实远程模型及安装包仍需单独验收；未完成模型请求可能重发，不能保证远端调用恰好一次。
 - 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
-  实测 `InMemoryCredentialStore is not a constructor`）；打包时需要确认 electron-builder 带上这些依赖。
+  实测 `InMemoryCredentialStore is not a constructor`），所以 `electron-builder.yml` 必须把生产
+  `node_modules` 一起打进 asar；否则应用只能在仓库里跑，拷贝后就找不到依赖。
 - `bash` 不是完整读取白名单：只额外屏蔽常见凭证目录和 dotenv，其他位置的敏感文件仍可能被读取并通过工具输出交给模型。
   禁止命令联网不等于杜绝信息外传。临时目录（包括较宽的 `/private/var/folders` 例外）仍可写，
   但本应用 `pi-sandbox-*` 策略目录不可被命令改写；工作区内破坏仍需审批、版本控制和备份。
