@@ -39,3 +39,5 @@ export { AppTitleDoc } from "./title.ts"
 
 export type { AppActivity } from "./activity.ts"
 export { AppActivityDoc } from "./activity.ts"
+export type { AppChanges } from "./changes.ts"
+export { AppChangesDoc } from "./changes.ts"

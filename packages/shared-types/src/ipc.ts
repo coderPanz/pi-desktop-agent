@@ -1,7 +1,7 @@
 /**
  * IPC ：渲染进程通过该层调用主进程的方法
  */
-import type { ApprovalDecision, ApprovalView, ConversationSummary, HostInfo, HostStatus, ModelSettingsView } from "./domain.ts"
+import type { ApprovalDecision, ApprovalView, ChangeSummaryView, ConversationSummary, HostInfo, HostStatus, ModelSettingsView } from "./domain.ts"
 import type { IpcErrorPayload } from "./errors.ts"
 import type { ConversationId, EntryId, OpenedView } from "./frame.ts"
 import type { JsonObject } from "./json.ts"
@@ -38,6 +38,19 @@ export type IpcMap = {
   "clipboard.copy": {
     readonly request: { readonly text: string }
     readonly response: Record<string, never>
+  }
+  /**
+   * 最近一轮的改动统计。git 仓库才给逐文件 +/-；非 git 返回 `repo:false`，
+   * 界面用工具调用里的路径自行列文件。
+   */
+  "changes.get": {
+    readonly request: { readonly conversationId: ConversationId }
+    readonly response: ChangeSummaryView
+  }
+  /** 单个文件的 patch 文本；点开某个文件才算，不预生成。 */
+  "changes.diff": {
+    readonly request: { readonly conversationId: ConversationId; readonly path: string }
+    readonly response: { readonly patch: string; readonly truncated: boolean }
   }
   /** 当前模型配置；密钥只报有无，不回传值。 */
   "model.get": {

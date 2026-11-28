@@ -108,3 +108,19 @@ export type ModelSettingsView = {
   /** 环境变量优先时界面不允许改配置，避免“改了不生效”。 */
   readonly locked: boolean
 }
+
+/** 本轮改动里的一个文件（git 统计；非 git 时只有路径）。 */
+export type ChangedFileView = {
+  readonly path: string
+  readonly added: number
+  readonly removed: number
+  readonly binary: boolean
+}
+
+/** 「本轮改动」卡片的数据。`repo:false` 表示工作区不在 git 仓库，此时 `files` 为空。 */
+export type ChangeSummaryView = {
+  readonly submissionId: number
+  readonly repo: boolean
+  readonly files: readonly ChangedFileView[]
+  readonly truncated: boolean
+}

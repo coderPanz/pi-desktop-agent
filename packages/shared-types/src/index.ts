@@ -49,6 +49,8 @@ export type {
   ConversationSummary,
   HostInfo,
   HostStatus,
+  ChangeSummaryView,
+  ChangedFileView,
   ModelSettingsView,
   ToolInfo,
   ToolStatus,

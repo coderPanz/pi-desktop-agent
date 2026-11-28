@@ -146,6 +146,23 @@ export class IpcRouter {
         return {} as IpcResponse<K>
       }
 
+      // 最近一轮改动统计（git 现算）
+      case "changes.get": {
+        const id = conversationIdOf(input)
+        await this.#conversation(id, context)
+        return (await this.#manager.changeSummary(id, context)) as IpcResponse<K>
+      }
+
+      // 单文件 patch：点开某个文件才算
+      case "changes.diff": {
+        const id = conversationIdOf(input)
+        const file = requiredText(input, "path")
+        await this.#conversation(id, context)
+        const result = await this.#manager.changeDiff(id, file, context)
+        if (result === undefined) throw new IpcError("NOT_FOUND", "没有可用的 diff（工作区不在 git 仓库或缺少基线）。")
+        return result as IpcResponse<K>
+      }
+
       // 打开工作区里的文件：先按真实路径校验边界，再交给系统
       case "file.open": {
         const requested = requiredText(input, "path")

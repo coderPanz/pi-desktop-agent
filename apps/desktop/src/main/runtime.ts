@@ -190,6 +190,8 @@ export class DesktopRuntime {
     const manager = await SessionManager.open({
       harness: host.harness,
       storage,
+      // 改动统计要用工作区所在的 git 仓库算基线
+      workspace: paths.workspace,
       // 文件库才有物理删除；内存库（--memory）退回「从列表移除」
       purge: createConversationPurge(target),
       // 超过 10 字的第一条用户消息：后台问一次模型压成标题，生成好就推给界面
