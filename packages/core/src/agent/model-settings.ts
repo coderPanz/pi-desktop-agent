@@ -151,11 +151,12 @@ export class ModelSettings {
     return this.#snapshot
   }
 
-  /** 清除应用内保存的密钥；环境变量仍可作为回退。 */
-  async clearKey(): Promise<void> {
+  /** 清除应用内保存的密钥并立即重建模型集合；环境变量仍可作为回退。 */
+  async clearKey(context: Context): Promise<void> {
     await this.#secret.clear()
-    this.#models = undefined
-    this.#warming = undefined
+    this.#snapshot = await this.#resolve(context)
+    this.#models = buildRegistry(this.#snapshot, gatewayAuth(this.#secret, this.#env))
+    this.#warming = Promise.resolve()
   }
 
   /** 密钥来源说明，给设置面板显示。 */

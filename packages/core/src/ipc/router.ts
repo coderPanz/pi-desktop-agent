@@ -157,7 +157,7 @@ export class IpcRouter {
 
       // 清除应用内保存的密钥
       case "model.clearKey": {
-        await this.#requireModels().clearKey()
+        await this.#requireModels().clearKey(context)
         return (await this.#modelView()) as IpcResponse<K>
       }
 

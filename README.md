@@ -233,5 +233,7 @@ CLI 会主动结束等待并以失败码退出。重启是重新打开存储，�
 - 沙箱用的是 Apple 的 **deprecated API** `sandbox-exec`（macOS 26.2 实测可用）：将来被移除后需要走容器/VM 路线
   （`docs/沙箱方案.md` §3）。进程内文件工具（`write`/`edit`）走的是应用层路径边界，不在内核沙箱里
   （理由与 Phase 2 的 tools worker 计划见同一文档）。
-- `pnpm package` 从未跑过；Electron 打包后 `node:sqlite` 的 ABI 与 asar 内动态 import 都未验证。
+- 打包状态：`pnpm package` 已首次执行，`.app` 可启动——`node:sqlite` 建库、safeStorage 加密、Seatbelt 沙箱、
+  首次配置（无 `.env`）与真实对话均已验证；DMG 因下载 dmgbuild 超时未产出，`--dir` 重新打包因耗时未完成。
+  最近一次修复（清除密钥后重建模型集合）尚未在打包产物内复验。
 - V1 不做：多窗口写同一会话、云端同步、多进程打开同一 SQLite、插件市场、移动端。
