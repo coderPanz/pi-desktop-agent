@@ -38,7 +38,7 @@ export type PolicyOptions = {
 }
 
 /** 只读、无副作用，直接放行的工具 */
-const ALLOWED_TOOLS: ReadonlySet<string> = new Set(["read", "list_dir", "grep", "glob"])
+const ALLOWED_TOOLS: ReadonlySet<string> = new Set(["read", "list_dir", "grep", "glob", "git_commit"])
 
 /** 需 human-in-the-loop */
 const ASKED_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "apply_patch"])

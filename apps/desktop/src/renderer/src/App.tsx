@@ -462,7 +462,7 @@ export function App() {
             onRevert={async (path) => {
               if (selected === undefined) return false
               try {
-                await invoke("file.revert", { conversationId: selected, path })
+                await invoke("file.revert", { conversationId: selected, path, round: changes.round })
                 return true
               } catch {
                 return false

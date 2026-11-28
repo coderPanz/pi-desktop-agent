@@ -25,7 +25,10 @@ const SKIP_DIRS: ReadonlySet<string> = new Set([
   "coverage", ".cache", "__pycache__", ".venv", "venv", ".idea", ".DS_Store",
 ])
 
-const MAX_FILES = 5_000
+/** 单次遍历的文件上限：monorepo 也能覆盖大半，同时给内存与时间兜底。 */
+const MAX_FILES = 20_000
+/** 遍历的最长时间：到点就带着 truncated 返回，不把主进程拖住。 */
+const MAX_SCAN_MS = 5_000
 const MAX_FILE_BYTES = 512 * 1024
 const MAX_RESULTS = 200
 const MAX_DEPTH = 12
@@ -129,14 +132,19 @@ async function walkFiles(
   const files: FileEntry[] = []
   let truncated = false
 
+  const deadline = Date.now() + MAX_SCAN_MS
   const visit = async (dir: string, prefix: string, depth: number): Promise<string | undefined> => {
+    if (Date.now() > deadline) {
+      truncated = true
+      return undefined
+    }
     const listed = await env.listDir(dir, context)
     if (!listed.ok) {
       if (depth === 1) return `无法列出 ${dir}：${listed.error.message}`
       return undefined // 子目录读不了就跳过，不因为一个坏目录让整次搜索失败
     }
     for (const entry of listed.value) {
-      if (files.length >= MAX_FILES) {
+      if (files.length >= MAX_FILES || Date.now() > deadline) {
         truncated = true
         return undefined
       }
@@ -312,7 +320,7 @@ export function createGrepTool(options: { readonly guard: PathGuard }) {
 
       const diagnostics = [{ severity: "info" as const, code: "search_stats", message: `扫描 ${String(searched)} 个文件，命中 ${String(hits)} 行。` }]
       if (walked.truncated) {
-        diagnostics.push({ severity: "info", code: "truncated", message: `只扫描前 ${String(MAX_FILES)} 个文件；缩小 path 或加 glob 更准。` })
+        diagnostics.push({ severity: "info", code: "truncated", message: `遍历被上限截断（${String(MAX_FILES)} 个文件或 ${String(MAX_SCAN_MS / 1000)} 秒）；缩小 path 或加 glob 更准。` })
       }
       if (hits >= MAX_RESULTS) {
         diagnostics.push({ severity: "info", code: "truncated", message: `只返回前 ${String(MAX_RESULTS)} 条命中。` })
@@ -356,7 +364,7 @@ export function createGlobTool(options: { readonly guard: PathGuard }) {
 
       const diagnostics = [{ severity: "info" as const, code: "search_stats", message: `遍历 ${String(walked.files.length)} 个文件，匹配 ${String(matched.length)} 个。` }]
       if (walked.truncated) {
-        diagnostics.push({ severity: "info", code: "truncated", message: `只遍历前 ${String(MAX_FILES)} 个文件。` })
+        diagnostics.push({ severity: "info", code: "truncated", message: `遍历被上限截断（${String(MAX_FILES)} 个文件或 ${String(MAX_SCAN_MS / 1000)} 秒）。` })
       }
       return {
         output: [{ type: "text" as const, text: matched.length === 0 ? "（没有匹配的文件）" : matched.join("\n") }],

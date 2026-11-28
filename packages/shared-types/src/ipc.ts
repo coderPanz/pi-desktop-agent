@@ -49,7 +49,7 @@ export type IpcMap = {
    * 只在 git 仓库且有基线时可用；路径由主进程按工作区边界校验。
    */
   "file.revert": {
-    readonly request: { readonly conversationId: ConversationId; readonly path: string }
+    readonly request: { readonly conversationId: ConversationId; readonly path: string; readonly round?: number }
     readonly response: Record<string, never>
   }
   /**
@@ -70,12 +70,13 @@ export type IpcMap = {
    * 界面用工具调用里的路径自行列文件。
    */
   "changes.get": {
-    readonly request: { readonly conversationId: ConversationId }
-    readonly response: ChangeSummaryView
+    /** `round`：0 = 本轮（默认），1 = 上一轮，2 = 上上轮…最多保留 10 轮。 */
+    readonly request: { readonly conversationId: ConversationId; readonly round?: number }
+    readonly response: ChangeSummaryView & { readonly rounds: number }
   }
   /** 单个文件的 patch 文本；点开某个文件才算，不预生成。 */
   "changes.diff": {
-    readonly request: { readonly conversationId: ConversationId; readonly path: string }
+    readonly request: { readonly conversationId: ConversationId; readonly path: string; readonly round?: number }
     readonly response: { readonly patch: string; readonly truncated: boolean }
   }
   /** 当前模型配置；密钥只报有无，不回传值。 */

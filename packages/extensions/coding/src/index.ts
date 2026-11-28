@@ -35,6 +35,8 @@ import { toolError } from "./results.ts"
 import { createListDirTool } from "./tools/list-dir.ts"
 // 项目上下文（AGENTS.md / scripts / 顶层结构）
 import { projectContextSection } from "./context.ts"
+// git 提交（只提交点名文件）
+import { createGitCommitTool } from "./tools/git-commit.ts"
 // 多文件一次性修改
 import { createApplyPatchTool } from "./tools/apply-patch.ts"
 // grep / glob 检索工具
@@ -134,6 +136,11 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
     withPolicy(withPathGuard(createReadTool(), guard), { replay: "safe" }),
     // list_dir 工具配置
     createListDirTool({ guard }),
+    // 提交：只提交点名文件，串行、不可重放
+    withPolicy(createGitCommitTool({ guard, workspace: options.workspace }), {
+      replay: "unsafe",
+      executionMode: "sequential",
+    }),
     // 多文件改动：整批校验后才落盘，必须串行、不可重放
     withPolicy(createApplyPatchTool({ guard }), {
       replay: "unsafe",

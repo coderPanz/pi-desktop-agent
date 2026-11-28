@@ -26,7 +26,7 @@ import {
 } from "@earendil-works/pi-durable"
 import { AppActivityDoc, AppChangesDoc, AppPinsDoc, AppTitleDoc, AppTrashDoc } from "@pi/shared-docs"
 import type { ChangeSummaryView } from "@pi/shared-types"
-import { createBaseline, filePatch, revertFile, summary } from "../git/changes.ts"
+import { createBaseline, filePatch, MAX_ROUNDS, revertFile, summary } from "../git/changes.ts"
 
 import type { ConversationPurge } from "../storage/purge.ts"
 import type {
@@ -437,17 +437,37 @@ export class SessionManager {
     const baseline = await createBaseline(this.#workspace).catch(() => undefined)
     await this.#harness.commit(async tx => {
       const doc = await tx.doc(AppChangesDoc, conversationId)
+      const at = Date.now()
+      // 本轮基线进历史，保留最近 MAX_ROUNDS 轮（旧文档没有 rounds，补一个空数组）
+      const history = doc.rounds ?? []
+      doc.rounds = [{ submissionId, baseline: baseline ?? "", at }, ...history].slice(0, MAX_ROUNDS)
       doc.submissionId = submissionId
       doc.baseline = baseline ?? ""
-      doc.at = Date.now()
+      doc.at = at
     }, context).catch(() => undefined)
   }
 
-  /** 最近一轮的改动统计；非 git 返回 `repo:false`，界面用工具调用里的路径自行列文件。 */
-  async changeSummary(conversationId: ConversationId, context: Context = BACKGROUND_CONTEXT): Promise<ChangeSummaryView> {
+  /** 取第 `round` 轮的基线（0 = 当前轮，1 = 上一轮…）；没有就返回 undefined。 */
+  async #roundOf(conversationId: ConversationId, round: number, context: Context) {
+    const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
+    if (doc === undefined) return undefined
+    const history = doc.rounds ?? []
+    const entry = history[round] ?? (round === 0 ? { submissionId: doc.submissionId, baseline: doc.baseline, at: doc.at } : undefined)
+    if (entry === undefined) return undefined
+    return { doc, entry, count: history.length }
+  }
+
+  /** 可选的基线轮数（供界面显示「本轮 / 上一轮…」）。 */
+  async changeRounds(conversationId: ConversationId, context: Context = BACKGROUND_CONTEXT): Promise<number> {
+    const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
+    return doc?.rounds?.length ?? (doc === undefined ? 0 : 1)
+  }
+
+  /** 某一轮的改动统计；非 git 返回 `repo:false`，界面用工具调用里的路径自行列文件。 */
+  async changeSummary(conversationId: ConversationId, context: Context = BACKGROUND_CONTEXT, round = 0): Promise<ChangeSummaryView> {
     if (this.#workspace === undefined) return { submissionId: 0, repo: false, files: [], truncated: false }
     const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
-    const baseline = doc === undefined || doc.baseline === "" ? undefined : doc.baseline
+    const baseline = (await this.#roundOf(conversationId, round, context))?.entry.baseline || undefined
     // 用基线时间判断“哪些未跟踪文件是本轮新建的”
     const result = await summary(this.#workspace, baseline, doc?.at ?? undefined)
     return {
@@ -459,19 +479,19 @@ export class SessionManager {
   }
 
   /** 撤销单个文件到本轮基线；没有基线/不在 git 仓库/失败都返回 false。 */
-  async revertChange(conversationId: ConversationId, file: string, context: Context = BACKGROUND_CONTEXT): Promise<boolean> {
+  async revertChange(conversationId: ConversationId, file: string, context: Context = BACKGROUND_CONTEXT, round = 0): Promise<boolean> {
     if (this.#workspace === undefined) return false
-    const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
-    if (doc === undefined || doc.baseline === "") return false
-    return await revertFile(this.#workspace, doc.baseline, file)
+    const entry = (await this.#roundOf(conversationId, round, context))?.entry
+    if (entry === undefined || entry.baseline === "") return false
+    return await revertFile(this.#workspace, entry.baseline, file)
   }
 
   /** 单文件 patch；没有基线或不在 git 仓库时返回 undefined（界面显示原因，不报错）。 */
-  async changeDiff(conversationId: ConversationId, file: string, context: Context = BACKGROUND_CONTEXT) {
+  async changeDiff(conversationId: ConversationId, file: string, context: Context = BACKGROUND_CONTEXT, round = 0) {
     if (this.#workspace === undefined) return undefined
-    const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
-    if (doc === undefined || doc.baseline === "") return undefined
-    return await filePatch(this.#workspace, doc.baseline, file)
+    const entry = (await this.#roundOf(conversationId, round, context))?.entry
+    if (entry === undefined || entry.baseline === "") return undefined
+    return await filePatch(this.#workspace, entry.baseline, file)
   }
 
   /** 中断当前会话：撤回排队的 input 、给运行中的 task 写入 abort 标记，并等待普通工作停止 */

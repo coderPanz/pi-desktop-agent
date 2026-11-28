@@ -189,3 +189,6 @@ export async function revertFile(workspace: string, baseline: string, file: stri
   await rm(absolute, { force: true })
   return true
 }
+
+/** 保留多少轮基线：再多也没人回滚那么远，还占文档体积。 */
+export const MAX_ROUNDS = 10

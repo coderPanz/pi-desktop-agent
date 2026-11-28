@@ -17,6 +17,10 @@ export type ChangeSummaryCardProps = {
   /** 非 git 时本轮触达的文件（来自工具调用参数），用来给出可读的列表。 */
   readonly touchedPaths: readonly string[]
   readonly onOpenFile: (path: string) => void
+  /** 看的是第几轮基线（0 = 本轮）。 */
+  readonly round: number
+  readonly rounds: number
+  readonly onRoundChange: (round: number) => void
   /** 文件写盘后刷新统计与 diff。 */
   readonly onEdited: () => void
   /** 把某个文件撤销到本轮基线；返回是否成功。 */
@@ -24,7 +28,7 @@ export type ChangeSummaryCardProps = {
   readonly loadDiff: (path: string) => Promise<string | undefined>
 }
 
-export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited, onRevert, loadDiff }: ChangeSummaryCardProps) {
+export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited, onRevert, loadDiff, round, rounds, onRoundChange }: ChangeSummaryCardProps) {
   const [open, setOpen] = useState(false)
   /** 正在内联编辑的文件（点路径进入编辑态，再点收起）。 */
   const [editing, setEditing] = useState<string | undefined>(undefined)
@@ -63,6 +67,19 @@ export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited,
         ) : (
           <span className="text-[11px] text-tertiary">{touchedPaths.length} 个文件</span>
         )}
+        {rounds > 1 ? (
+          <select
+            aria-label="对比基线"
+            className="pointer-events-auto rounded-md border border-control-border bg-surface px-1.5 py-0.5 text-[10px] text-secondary"
+            value={round}
+            onClick={event => event.stopPropagation()}
+            onChange={event => onRoundChange(Number(event.target.value))}
+          >
+            {Array.from({ length: Math.min(rounds, 10) }, (_, index) => (
+              <option key={index} value={index}>{index === 0 ? "本轮" : index === 1 ? "上一轮" : `上 ${index} 轮`}</option>
+            ))}
+          </select>
+        ) : null}
         <span className="ml-auto text-[11px] text-tertiary">{open ? "收起" : "展开"}</span>
         <Icon name="chevron" className={`pi-disclosure size-3 text-tertiary ${open ? "rotate-90" : ""}`} />
       </button>

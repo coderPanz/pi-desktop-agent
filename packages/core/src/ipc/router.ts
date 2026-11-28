@@ -149,8 +149,13 @@ export class IpcRouter {
       // 最近一轮改动统计（git 现算）
       case "changes.get": {
         const id = conversationIdOf(input)
+        const round = optionalInteger(input, "round", 0) ?? 0
         await this.#conversation(id, context)
-        return (await this.#manager.changeSummary(id, context)) as IpcResponse<K>
+        const [summary, rounds] = await Promise.all([
+          this.#manager.changeSummary(id, context, round),
+          this.#manager.changeRounds(id, context),
+        ])
+        return { ...summary, rounds } as IpcResponse<K>
       }
 
       // 单文件 patch：点开某个文件才算
@@ -158,7 +163,8 @@ export class IpcRouter {
         const id = conversationIdOf(input)
         const file = requiredText(input, "path")
         await this.#conversation(id, context)
-        const result = await this.#manager.changeDiff(id, file, context)
+        const round = optionalInteger(input, "round", 0) ?? 0
+        const result = await this.#manager.changeDiff(id, file, context, round)
         if (result === undefined) throw new IpcError("NOT_FOUND", "没有可用的 diff（工作区不在 git 仓库或缺少基线）。")
         return result as IpcResponse<K>
       }
@@ -202,7 +208,8 @@ export class IpcRouter {
         const id = conversationIdOf(input)
         const file = requiredText(input, "path")
         await this.#conversation(id, context)
-        if (!(await this.#manager.revertChange(id, file, context))) {
+        const round = optionalInteger(input, "round", 0) ?? 0
+        if (!(await this.#manager.revertChange(id, file, context, round))) {
           throw new IpcError("INVALID_ARGUMENT", "无法撤销：工作区不在 git 仓库、没有基线，或文件已不存在。")
         }
         return {} as IpcResponse<K>

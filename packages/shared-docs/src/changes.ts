@@ -6,13 +6,22 @@
  */
 import { defineDoc } from "@earendil-works/pi-durable"
 
-export type AppChanges = {
-  /** 这一轮对应的 submission id；0 表示还没有记录。 */
+/** 一轮的起点。 */
+export type AppChangeRound = {
+  /** 这一轮对应的 submission id。 */
   submissionId: number
   /** `git stash create` 得到的起点 commit；空串表示工作区不在 git 仓库或没有基线。 */
   baseline: string
-  /** 写入时的墙钟时间（毫秒）。 */
+  /** 记录时的墙钟时间（毫秒）。 */
   at: number
+}
+
+export type AppChanges = AppChangeRound & {
+  /**
+   * 最近若干轮的起点，**最新在前**。用来支持「撤销到上一轮」。
+   * 旧版本写入的文档没有这个字段，读取时按空数组处理。
+   */
+  rounds?: AppChangeRound[]
 }
 
 export const AppChangesDoc = defineDoc({

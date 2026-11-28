@@ -30,7 +30,13 @@ export type MessageListProps = {
   /** 把文件撤销到本轮基线。 */
   readonly onRevert: (path: string) => Promise<boolean>
   /** 本轮改动（git 现算）；非 git 时用 `touchedPaths` 列表降级展示。 */
-  readonly changes: { readonly summary: ChangeSummaryView | undefined; readonly loadDiff: (path: string) => Promise<string | undefined> }
+  readonly changes: {
+    readonly summary: ChangeSummaryView | undefined
+    readonly loadDiff: (path: string) => Promise<string | undefined>
+    readonly round: number
+    readonly rounds: number
+    readonly setRound: (round: number) => void
+  }
   readonly touchedPaths: readonly string[]
 }
 
@@ -101,6 +107,9 @@ export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCo
               onOpenFile={onOpenFile}
               onEdited={onEdited}
               onRevert={onRevert}
+              round={changes.round}
+              rounds={changes.rounds}
+              onRoundChange={changes.setRound}
               loadDiff={changes.loadDiff}
             />
           )}
