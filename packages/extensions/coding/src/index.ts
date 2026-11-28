@@ -31,6 +31,8 @@ import { classify, describeCall, type PolicyOptions, type ToolCallView } from ".
 import { toolError } from "./results.ts"
 // list_dir 工具
 import { createListDirTool } from "./tools/list-dir.ts"
+// grep / glob 检索工具
+import { createGlobTool, createGrepTool } from "./tools/search.ts"
 
 
 export type CodingExtensionOptions = {
@@ -105,6 +107,9 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
     withPolicy(withPathGuard(createReadTool(), guard), { replay: "safe" }),
     // list_dir 工具配置
     createListDirTool({ guard }),
+    // 检索：只读、可并行、崩溃后可安全重跑
+    withPolicy(createGrepTool({ guard }), { replay: "safe" }),
+    withPolicy(createGlobTool({ guard }), { replay: "safe" }),
     // 【写入存储】-【执行命令】工具配置→ 不重放，整轮串行
     withPolicy(withPathGuard(createWriteTool(), guard), {
       replay: "unsafe",
