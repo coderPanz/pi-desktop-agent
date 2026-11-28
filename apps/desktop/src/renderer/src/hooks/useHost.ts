@@ -71,6 +71,19 @@ export function useHost(): HostHandle {
   }), [])
 
   const restart = useCallback(async () => { await invoke("app.restart", {}) }, [])
+
+  // 会话列表里的忙/排队是主进程算的，任务结束不会自己重拉；
+  // submission 一变就防抖刷新，覆盖“开始忙”“入队”“结束”三种时机。
+  const refreshTimer = useRef<number | undefined>(undefined)
+  useEffect(() => subscribe("submission", () => {
+    if (!active.current || hostUnavailable(latestStatus.current)) return
+    window.clearTimeout(refreshTimer.current)
+    refreshTimer.current = window.setTimeout(() => {
+      void refresh().catch(() => {})
+    }, 150)
+  }), [refresh])
+  useEffect(() => () => window.clearTimeout(refreshTimer.current), [])
+
   return { info, status, conversations, loaded, refresh, checkHealth, restart }
 }
 
