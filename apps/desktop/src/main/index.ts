@@ -20,14 +20,16 @@ import { registerIpc } from "./ipc.ts"
 /** 纯 Node 的运行时装配（存储 → Harness → 会话/帧/审批/路由）； */
 import { DesktopRuntime } from "./runtime.ts"
 import { loadDesktopEnv } from "./config.ts"
+import { runPackagedSubappImportProbe } from "./subapp-p0-package.ts"
 
 /** `file://` 协议 URL → 原生绝对路径。 */
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
 if (!app.isPackaged) loadDesktopEnv(path.resolve(app.getAppPath(), "../../.env"))
 const devServerUrl = process.env.PI_DEV_SERVER_URL
+const packageImportProbe = process.env.PI_SUBAPP_P0_PACKAGE_IMPORT === "1"
 
-// 单例锁
-const gotLock = app.requestSingleInstanceLock()
+// P0.3 必须能与正在开发的同 bundle id 应用并存，否则会在执行 probe 前因单例锁退出。
+const gotLock = packageImportProbe ? true : app.requestSingleInstanceLock()
 
 if (!gotLock) {
   app.quit()
@@ -140,6 +142,17 @@ if (!gotLock) {
   app
     .whenReady()
     .then(async () => {
+      if (packageImportProbe) {
+        const result = await runPackagedSubappImportProbe({
+          dataDir: process.env.PI_DATA_DIR ?? app.getPath("userData"),
+          importerUrl: import.meta.url,
+          packaged: app.isPackaged,
+        })
+        console.log("[subapp-p0-package] PASS", JSON.stringify(result))
+        app.exit(0)
+        return
+      }
+
       console.log("[main] 启动", {
         electron: process.versions.electron,
         node: process.versions.node,
