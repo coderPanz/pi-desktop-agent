@@ -27,6 +27,24 @@ export type IpcMap = {
     readonly response: Record<string, never>
   }
   /**
+   * 读工作区里的文本文件给内置编辑器；超过 2MB 或二进制一律拒绝（提示用系统程序打开）。
+   * `mtimeMs` 同时返回，保存时作为乐观锁用。
+   */
+  "file.read": {
+    readonly request: { readonly path: string }
+    readonly response: { readonly content: string; readonly mtimeMs: number }
+  }
+  /**
+   * 写回内置编辑器改的内容。`mtimeMs` 与磁盘不一致时返回 `conflict`，
+   * 由用户决定覆盖还是放弃——避免和 Agent 同时改同一文件时互相覆盖。
+   */
+  "file.write": {
+    readonly request: { readonly path: string; readonly content: string; readonly mtimeMs: number }
+    readonly response:
+      | { readonly status: "saved"; readonly mtimeMs: number }
+      | { readonly status: "conflict"; readonly mtimeMs: number }
+  }
+  /**
    * 用系统默认程序打开工作区里的文件；路径由主进程按工作区边界校验。
    * 渲染进程不能把模型给的任意路径直接交给系统。
    */

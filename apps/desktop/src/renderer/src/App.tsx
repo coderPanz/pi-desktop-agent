@@ -35,6 +35,8 @@ export function App() {
   // 模型配置（密钥不回显）；保存后只影响新建会话
   const modelSettings = useModelSettings(host.loaded)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 文件在卡片内被编辑后，用它触发「本轮改动」刷新
+  const [changesRevision, setChangesRevision] = useState(0)
   // 当前活动会话的 id【界面： 左侧会话列表的“选中项”】相当于整个界面的数据源指针
   const [selected, setSelected] = useState<ConversationId | undefined>(
     undefined,
@@ -54,7 +56,7 @@ export function App() {
   // 用于追踪：用户发出去的指令 的生命周期
   const submission = useSubmission(selected, !unavailable)
   // 本轮改动：统计随条目数刷新（一轮结束条目会变），diff 点开才拉
-  const changes = useChanges(selected, conversation.snapshot?.entries.length ?? 0)
+  const changes = useChanges(selected, (conversation.snapshot?.entries.length ?? 0) + changesRevision)
 
   // react 使用的是【引用比较】底层为 Object.is
   /**
@@ -456,6 +458,7 @@ export function App() {
             }}
             changes={changes}
             touchedPaths={touchedPaths(snapshot)}
+            onEdited={() => setChangesRevision(value => value + 1)}
             onCopyPath={(path) => {
               void run("复制路径", async () => { await invoke("clipboard.copy", { text: path }) })
             }}

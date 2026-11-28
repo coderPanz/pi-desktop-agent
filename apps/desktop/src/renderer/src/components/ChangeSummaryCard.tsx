@@ -8,6 +8,7 @@ import { useState } from "react"
 import type { ChangeSummaryView } from "@pi/shared-types"
 
 import { Icon } from "./Icon.tsx"
+import { InlineFileEditor } from "./InlineFileEditor.tsx"
 
 const MAX_LINES = 400
 
@@ -16,11 +17,15 @@ export type ChangeSummaryCardProps = {
   /** 非 git 时本轮触达的文件（来自工具调用参数），用来给出可读的列表。 */
   readonly touchedPaths: readonly string[]
   readonly onOpenFile: (path: string) => void
+  /** 文件写盘后刷新统计与 diff。 */
+  readonly onEdited: () => void
   readonly loadDiff: (path: string) => Promise<string | undefined>
 }
 
-export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, loadDiff }: ChangeSummaryCardProps) {
+export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited, loadDiff }: ChangeSummaryCardProps) {
   const [open, setOpen] = useState(false)
+  /** 正在内联编辑的文件（点路径进入编辑态，再点收起）。 */
+  const [editing, setEditing] = useState<string | undefined>(undefined)
   const [patches, setPatches] = useState<Readonly<Record<string, string | undefined>>>({})
 
   const files = summary?.files ?? []
@@ -70,11 +75,17 @@ export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, loadDiff 
           {(repo ? files.map(file => file.path) : []).map(file => (
             <div key={file} className="mb-2 last:mb-0">
               <div className="flex items-center gap-2">
-                <button className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-secondary hover:text-accent" title={file} onClick={() => { void showPatch(file) }}>
+                <button
+                  className={`min-w-0 flex-1 truncate text-left font-mono text-[11px] hover:text-accent ${editing === file ? "text-accent" : "text-secondary"}`}
+                  title={`${file}（点击${editing === file ? "收起" : "编辑"}）`}
+                  onClick={() => setEditing(current => (current === file ? undefined : file))}
+                >
                   {file}
                 </button>
+                <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => { void showPatch(file) }}>diff</button>
                 <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => onOpenFile(file)}>打开</button>
               </div>
+              {editing === file ? <InlineFileEditor path={file} onSaved={onEdited} /> : null}
               {patches[file] === undefined ? null : <DiffView patch={patches[file] ?? ""} />}
             </div>
           ))}

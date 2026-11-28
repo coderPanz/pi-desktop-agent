@@ -16,6 +16,8 @@ const CHANNEL_LIST = [
   "app.restart", // 宿主失效后重启应用
   "changes.get", // 本轮改动统计
   "changes.diff", // 单文件 patch
+  "file.read", // 内置编辑器读文件
+  "file.write", // 内置编辑器写回（乐观锁）
   "file.open", // 用系统程序打开工作区内文件
   "clipboard.copy", // 写系统剪贴板
   "model.get", // 当前模型配置（密钥只说有无）

@@ -163,6 +163,40 @@ export class IpcRouter {
         return result as IpcResponse<K>
       }
 
+      // 读文件给内置编辑器（只允许工作区内、文本、≤2MB）
+      case "file.read": {
+        const target = await this.#editableFile(requiredText(input, "path"))
+        const { readFile, stat } = await import("node:fs/promises")
+        const content = await readFile(target)
+        if (content.includes(0)) throw new IpcError("INVALID_ARGUMENT", "这是二进制文件，请用系统程序打开。")
+        return { content: content.toString("utf8"), mtimeMs: (await stat(target)).mtimeMs } as IpcResponse<K>
+      }
+
+      // 写回内置编辑器改的内容；mtime 不一致就不覆盖
+      case "file.write": {
+        const target = await this.#editableFile(requiredText(input, "path"))
+        const content = requiredText(input, "content")
+        const mtimeMs = requiredNumber(input, "mtimeMs")
+        const { stat, writeFile } = await import("node:fs/promises")
+        const current = await stat(target).catch(() => undefined)
+        // 磁盘版本变了（Agent 或别人改过）：交给用户决定，避免互相覆盖
+        if (current !== undefined && Math.abs(current.mtimeMs - mtimeMs) > 1) {
+          return { status: "conflict", mtimeMs: current.mtimeMs } as IpcResponse<K>
+        }
+        // 原子写：先写同目录临时文件再 rename。直接覆盖时崩溃/磁盘满会留下半截文件。
+        const { rename, rm } = await import("node:fs/promises")
+        const { randomUUID } = await import("node:crypto")
+        const temporary = `${target}.pi-tmp-${randomUUID()}`
+        try {
+          await writeFile(temporary, content, { encoding: "utf8" })
+          await rename(temporary, target)
+        } catch (error) {
+          await rm(temporary, { force: true }).catch(() => undefined)
+          throw error
+        }
+        return { status: "saved", mtimeMs: (await stat(target)).mtimeMs } as IpcResponse<K>
+      }
+
       // 打开工作区里的文件：先按真实路径校验边界，再交给系统
       case "file.open": {
         const requested = requiredText(input, "path")
@@ -404,6 +438,16 @@ export class IpcRouter {
 
   /** 按 id 取会话句柄；不存在就是 NOT_FOUND，而不是笼统的「参数错误」。 */
   /** 把请求路径解析成工作区内真实路径；越界/不存在一律拒绝，不把可疑路径交给系统。 */
+  /** 内置编辑器可读写的文件：工作区内、普通文本、≤2MB。 */
+  async #editableFile(requested: string): Promise<string> {
+    const target = await this.#workspaceFile(requested)
+    const { stat } = await import("node:fs/promises")
+    const info = await stat(target)
+    if (!info.isFile()) throw new IpcError("INVALID_ARGUMENT", "不是普通文件，无法在应用内编辑。")
+    if (info.size > 2 * 1024 * 1024) throw new IpcError("INVALID_ARGUMENT", "文件超过 2MB，请用系统程序打开。")
+    return target
+  }
+
   async #workspaceFile(requested: string): Promise<string> {
     const workspace = this.#workspace
     if (workspace === undefined) throw new IpcError("UNKNOWN", "当前宿主没有配置工作区。")
@@ -512,6 +556,14 @@ function requiredText(input: Readonly<Record<string, unknown>>, key: string): st
   const value = input[key]
   if (typeof value !== "string" || value.trim() === "") {
     throw new IpcError("INVALID_ARGUMENT", `${key} 必须是非空字符串。`)
+  }
+  return value
+}
+
+function requiredNumber(input: Readonly<Record<string, unknown>>, key: string): number {
+  const value = input[key]
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new IpcError("INVALID_ARGUMENT", `${key} 必须是数字。`)
   }
   return value
 }
