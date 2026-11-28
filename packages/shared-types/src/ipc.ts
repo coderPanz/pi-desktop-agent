@@ -45,6 +45,14 @@ export type IpcMap = {
       | { readonly status: "conflict"; readonly mtimeMs: number }
   }
   /**
+   * 撤销单个文件到本轮基线：已跟踪文件回到基线版本，本轮新增的文件直接删除。
+   * 只在 git 仓库且有基线时可用；路径由主进程按工作区边界校验。
+   */
+  "file.revert": {
+    readonly request: { readonly conversationId: ConversationId; readonly path: string }
+    readonly response: Record<string, never>
+  }
+  /**
    * 用系统默认程序打开工作区里的文件；路径由主进程按工作区边界校验。
    * 渲染进程不能把模型给的任意路径直接交给系统。
    */

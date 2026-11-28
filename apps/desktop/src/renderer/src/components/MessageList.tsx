@@ -27,13 +27,15 @@ export type MessageListProps = {
   readonly onCopyPath: (path: string) => void
   /** 文件写盘后刷新「本轮改动」。 */
   readonly onEdited: () => void
+  /** 把文件撤销到本轮基线。 */
+  readonly onRevert: (path: string) => Promise<boolean>
   /** 本轮改动（git 现算）；非 git 时用 `touchedPaths` 列表降级展示。 */
   readonly changes: { readonly summary: ChangeSummaryView | undefined; readonly loadDiff: (path: string) => Promise<string | undefined> }
   readonly touchedPaths: readonly string[]
 }
 
 // 已提交历史 + 实时生成 + 实时工具状态 + 排队输入统一组织成对话区 UI 的组件
-export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCopyPath, onEdited, changes, touchedPaths }: MessageListProps) {
+export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCopyPath, onEdited, onRevert, changes, touchedPaths }: MessageListProps) {
   const entries = snapshot === undefined ? [] : visibleEntries(snapshot.entries)
   const liveText = snapshot === undefined ? undefined : liveGenerationText(snapshot)
   const lastAssistant = snapshot === undefined ? undefined : lastAssistantText(snapshot.entries)
@@ -98,6 +100,7 @@ export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCo
               touchedPaths={touchedPaths}
               onOpenFile={onOpenFile}
               onEdited={onEdited}
+              onRevert={onRevert}
               loadDiff={changes.loadDiff}
             />
           )}

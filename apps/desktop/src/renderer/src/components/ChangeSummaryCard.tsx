@@ -19,13 +19,18 @@ export type ChangeSummaryCardProps = {
   readonly onOpenFile: (path: string) => void
   /** 文件写盘后刷新统计与 diff。 */
   readonly onEdited: () => void
+  /** 把某个文件撤销到本轮基线；返回是否成功。 */
+  readonly onRevert: (path: string) => Promise<boolean>
   readonly loadDiff: (path: string) => Promise<string | undefined>
 }
 
-export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited, loadDiff }: ChangeSummaryCardProps) {
+export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited, onRevert, loadDiff }: ChangeSummaryCardProps) {
   const [open, setOpen] = useState(false)
   /** 正在内联编辑的文件（点路径进入编辑态，再点收起）。 */
   const [editing, setEditing] = useState<string | undefined>(undefined)
+  /** 等待二次确认的撤销目标：撤销会改磁盘，不做静默。 */
+  const [confirming, setConfirming] = useState<string | undefined>(undefined)
+  const [revertError, setRevertError] = useState<string | undefined>(undefined)
   const [patches, setPatches] = useState<Readonly<Record<string, string | undefined>>>({})
 
   const files = summary?.files ?? []
@@ -83,12 +88,44 @@ export function ChangeSummaryCard({ summary, touchedPaths, onOpenFile, onEdited,
                   {file}
                 </button>
                 <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => { void showPatch(file) }}>diff</button>
-                <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => onOpenFile(file)}>打开</button>
+                {confirming === file ? (
+                  <>
+                    <button
+                      className="shrink-0 rounded-md border border-danger/30 bg-danger-soft px-2 py-0.5 text-[10px] text-danger hover:bg-danger/10"
+                      onClick={() => {
+                        setConfirming(undefined)
+                        void onRevert(file).then(ok => {
+                          if (!ok) {
+                            setRevertError(`${file} 撤销失败：可能不在 git 仓库、没有基线，或被外部改过。`)
+                            return
+                          }
+                          setRevertError(undefined)
+                          setPatches(current => {
+                            const next = { ...current }
+                            delete next[file]
+                            return next
+                          })
+                          onEdited()
+                        })
+                      }}
+                    >
+                      确认撤销
+                    </button>
+                    <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle" onClick={() => setConfirming(undefined)}>取消</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle hover:text-danger" onClick={() => setConfirming(file)}>撤销</button>
+                    <button className="shrink-0 rounded-md border border-control-border bg-surface px-2 py-0.5 text-[10px] text-secondary hover:bg-subtle hover:text-accent" onClick={() => onOpenFile(file)}>打开</button>
+                  </>
+                )}
               </div>
               {editing === file ? <InlineFileEditor path={file} onSaved={onEdited} /> : null}
               {patches[file] === undefined ? null : <DiffView patch={patches[file] ?? ""} />}
             </div>
           ))}
+          {revertError === undefined ? null : <p role="alert" className="mt-2 text-[11px] leading-5 text-danger">{revertError}</p>}
+          <p className="mt-2 text-[11px] leading-5 text-tertiary">撤销只针对本轮起点：已跟踪文件回到基线版本，本轮新增的文件会被删除。</p>
           {summary?.truncated === true ? <p className="mt-2 text-[11px] text-tertiary">改动较多，只统计了前 200 个文件。</p> : null}
         </div>
       ) : null}

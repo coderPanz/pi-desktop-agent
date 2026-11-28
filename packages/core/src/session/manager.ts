@@ -26,7 +26,7 @@ import {
 } from "@earendil-works/pi-durable"
 import { AppActivityDoc, AppChangesDoc, AppPinsDoc, AppTitleDoc, AppTrashDoc } from "@pi/shared-docs"
 import type { ChangeSummaryView } from "@pi/shared-types"
-import { createBaseline, filePatch, summary } from "../git/changes.ts"
+import { createBaseline, filePatch, revertFile, summary } from "../git/changes.ts"
 
 import type { ConversationPurge } from "../storage/purge.ts"
 import type {
@@ -456,6 +456,14 @@ export class SessionManager {
       files: result.files,
       truncated: result.truncated,
     }
+  }
+
+  /** 撤销单个文件到本轮基线；没有基线/不在 git 仓库/失败都返回 false。 */
+  async revertChange(conversationId: ConversationId, file: string, context: Context = BACKGROUND_CONTEXT): Promise<boolean> {
+    if (this.#workspace === undefined) return false
+    const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
+    if (doc === undefined || doc.baseline === "") return false
+    return await revertFile(this.#workspace, doc.baseline, file)
   }
 
   /** 单文件 patch；没有基线或不在 git 仓库时返回 undefined（界面显示原因，不报错）。 */

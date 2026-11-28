@@ -18,6 +18,7 @@ const CHANNEL_LIST = [
   "changes.diff", // 单文件 patch
   "file.read", // 内置编辑器读文件
   "file.write", // 内置编辑器写回（乐观锁）
+  "file.revert", // 单文件撤销到本轮基线
   "file.open", // 用系统程序打开工作区内文件
   "clipboard.copy", // 写系统剪贴板
   "model.get", // 当前模型配置（密钥只说有无）

@@ -197,6 +197,17 @@ export class IpcRouter {
         return { status: "saved", mtimeMs: (await stat(target)).mtimeMs } as IpcResponse<K>
       }
 
+      // 撤销单个文件到本轮基线
+      case "file.revert": {
+        const id = conversationIdOf(input)
+        const file = requiredText(input, "path")
+        await this.#conversation(id, context)
+        if (!(await this.#manager.revertChange(id, file, context))) {
+          throw new IpcError("INVALID_ARGUMENT", "无法撤销：工作区不在 git 仓库、没有基线，或文件已不存在。")
+        }
+        return {} as IpcResponse<K>
+      }
+
       // 打开工作区里的文件：先按真实路径校验边界，再交给系统
       case "file.open": {
         const requested = requiredText(input, "path")

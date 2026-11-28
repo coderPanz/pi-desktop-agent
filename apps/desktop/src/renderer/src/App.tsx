@@ -459,6 +459,15 @@ export function App() {
             changes={changes}
             touchedPaths={touchedPaths(snapshot)}
             onEdited={() => setChangesRevision(value => value + 1)}
+            onRevert={async (path) => {
+              if (selected === undefined) return false
+              try {
+                await invoke("file.revert", { conversationId: selected, path })
+                return true
+              } catch {
+                return false
+              }
+            }}
             onCopyPath={(path) => {
               void run("复制路径", async () => { await invoke("clipboard.copy", { text: path }) })
             }}

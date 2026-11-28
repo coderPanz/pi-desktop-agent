@@ -8,7 +8,7 @@
  * 约束：只跑只读命令（`rev-parse` / `stash create` / `diff`），argv 形式不过 shell，cwd 固定在工作区。
  */
 import { execFile } from "node:child_process"
-import { readFile, stat } from "node:fs/promises"
+import { readFile, rm, stat } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 
@@ -162,4 +162,30 @@ export async function filePatch(
   if (out === undefined) return undefined
   if (out.length <= MAX_PATCH_BYTES) return { patch: out, truncated: false }
   return { patch: out.slice(0, MAX_PATCH_BYTES), truncated: true }
+}
+
+/**
+ * 把一个文件退回本轮基线。
+ *
+ * - 已跟踪：`git checkout <baseline> -- <file>`（只动这一个文件，不碰 index 之外的东西）
+ * - 本轮新增（未跟踪）：基线里没有它，直接删除
+ *
+ * 只接受仓库内的相对路径；返回 `false` 表示没做成（不存在、越界、git 失败），由界面提示。
+ */
+export async function revertFile(workspace: string, baseline: string, file: string): Promise<boolean> {
+  const root = await repoRoot(workspace)
+  if (root === undefined) return false
+  const relative = path.normalize(file)
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return false
+  const tracked = await git(workspace, ["ls-files", "--error-unmatch", "--", relative])
+  if (tracked !== undefined) {
+    const out = await git(workspace, ["checkout", baseline, "--", relative])
+    return out !== undefined
+  }
+  // 未跟踪：本轮新建的，撤销 = 删掉。只在确实存在时才删，避免误删别的路径。
+  const absolute = path.join(root, relative)
+  const info = await stat(absolute).catch(() => undefined)
+  if (info === undefined || !info.isFile()) return false
+  await rm(absolute, { force: true })
+  return true
 }
