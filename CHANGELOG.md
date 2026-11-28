@@ -185,8 +185,8 @@
 
 - 清除应用内密钥后立即重建模型集合：之前会清空注册表，导致后续生成报“模型配置尚未就绪”，
   必须重启才能恢复。打包验收时发现该问题并修复
-- 打包验收（首轮）：`.app` 启动、`node:sqlite`、safeStorage、Seatbelt、无 `.env` 首次配置与真实对话通过；
-  DMG 因 dmgbuild 下载超时未产出，`--dir` 重建未完成，clearKey 修复待产物内复验
+- 打包：新增 `package:dir`（只出 `.app`）与 `npmRebuild: false`，约 2 分钟；产物内已复验 `node:sqlite`、
+  safeStorage、Seatbelt、无 `.env` 首次配置、真实对话与 clearKey 后继续生成。DMG 因 dmgbuild 下载超时未产出
 
 - 沙箱准备阶段必须确认工作区、临时目录和家目录是真实目录，拒绝文件系统根作为工作区；
   profile 写入失败会清理临时目录，环境清理先终止受管理进程，任一清理失败仍执行另一项并保留错误

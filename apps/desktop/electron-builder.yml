@@ -15,6 +15,9 @@ files:
 
 asar: true
 
+# 产物只含 dist，运行时不需要 node_modules，跳过依赖重建显著加快打包
+npmRebuild: false
+
 mac:
   target:
     - dmg

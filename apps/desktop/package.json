@@ -9,7 +9,8 @@
     "start": "electron .",
     "build": "tsx build/build.ts",
     "gate": "tsx build/build.ts --gate",
-    "package": "pnpm build && electron-builder"
+    "package": "pnpm build && electron-builder",
+    "package:dir": "pnpm build && electron-builder --dir"
   },
   "dependencies": {
     "@earendil-works/chord": "1.4.0",

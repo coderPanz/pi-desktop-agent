@@ -94,7 +94,8 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 | `pnpm dev` | Vite dev server + esbuild watch + 拉起 Electron |
 | `pnpm build` | 构建 `dist/{main,preload,renderer}` |
 | `pnpm start` | 跑已构建产物（需先 `build`） |
-| `pnpm package` | electron-builder 打包 dmg/nsis（尚未冒烟） |
+| `pnpm package` | electron-builder 出 dmg/nsis（需要网络下载工具） |
+| `pnpm package:dir` | 只出未压缩 `.app`，约 2 分钟，适合开发与验收 |
 
 ## 数据布局
 
@@ -233,7 +234,7 @@ CLI 会主动结束等待并以失败码退出。重启是重新打开存储，�
 - 沙箱用的是 Apple 的 **deprecated API** `sandbox-exec`（macOS 26.2 实测可用）：将来被移除后需要走容器/VM 路线
   （`docs/沙箱方案.md` §3）。进程内文件工具（`write`/`edit`）走的是应用层路径边界，不在内核沙箱里
   （理由与 Phase 2 的 tools worker 计划见同一文档）。
-- 打包状态：`pnpm package` 已首次执行，`.app` 可启动——`node:sqlite` 建库、safeStorage 加密、Seatbelt 沙箱、
-  首次配置（无 `.env`）与真实对话均已验证；DMG 因下载 dmgbuild 超时未产出，`--dir` 重新打包因耗时未完成。
-  最近一次修复（清除密钥后重建模型集合）尚未在打包产物内复验。
+- 打包状态：`pnpm package:dir` 约 2 分钟产出 `.app`（`npmRebuild: false`，只出应用不做 DMG）。
+  已在产物内验证：`node:sqlite`、safeStorage 加密密钥、Seatbelt 沙箱、无 `.env` 的首次配置与真实对话、
+  清除密钥后继续生成。DMG 仍受网络限制（下载 dmgbuild 超时），发布时再出。
 - V1 不做：多窗口写同一会话、云端同步、多进程打开同一 SQLite、插件市场、移动端。
