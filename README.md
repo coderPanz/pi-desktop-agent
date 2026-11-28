@@ -64,6 +64,11 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 `sandbox-exec` 的策略下——写只允许工作区与临时目录，网络默认拒绝，`cd ..` 后再写、`sh -c 'sh -c …'`、
 通过软链绕出去都会被内核拒掉（`Operation not permitted`）。开关：`PI_SANDBOX=seatbelt|off`（macOS 默认开）、
 `PI_SANDBOX_NET=allow`（默认 deny）。沙箱不可用（缺 `sandbox-exec`）时**拒绝执行 bash**，不静默降级。
+命令环境只继承 PATH、HOME、语言、临时目录等运行变量，不继承宿主模型 API Key、云凭证、代理或解释器启动钩子；
+此过滤在 `PI_SANDBOX=off` 时也保留。Seatbelt 使用非登录 shell（zsh 加 `-f`），不自动加载用户登录配置。
+读取额外屏蔽 `~/.ssh`、`~/.aws`、`~/.gnupg`、`~/.azure`、`~/.kube`、`~/.config/gcloud`、`~/.config/gh`
+及 `.env` / `.env.*`（普通 `.env.example` 除外）；凭证目录软链的真实目标也屏蔽。
+因此 git/云工具不能直接借用这些本机登录态，`PI_SANDBOX_NET=allow` 也不会解除读取限制。
 方案与边界见 [`docs/沙箱方案.md`](docs/沙箱方案.md)。
 
 审批分三档：
@@ -82,7 +87,8 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 |---|---|
 | `pnpm cli` | 终端入口（无 Electron） |
 | `pnpm smoke` | 端到端冒烟：真实装配 + 跑几条 REPL 命令，不联网、不需要凭证 |
-| `pnpm test` | 单元测试（契约、core、CLI 解析与渲染） |
+| `pnpm test` | 运行源码中的 `*.test.ts` 回归测试 |
+| `pnpm test:sandbox` | 沙箱与路径边界回归；macOS 上实际执行 Seatbelt，其他平台跳过集成部分 |
 | `pnpm typecheck` | 两套 tsconfig：Node 侧（packages + cli）+ desktop 侧（含 renderer） |
 | `pnpm lint` | ESLint，含两条导入边界 |
 | `pnpm gate` | 存储门禁：Electron 内置 Node 版本 + `node:sqlite` 真实建库读写 |
@@ -169,7 +175,8 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm smoke   # 提交前例行
 ```
 
 改动前请读 [AGENT.md](./AGENT.md)（名字是契约、先提交后展示、主进程唯一写者、错误按范围分级）。
-ci 在 `.github/workflows/ci.yml`：`verify` 跑四项检查，`desktop` 单独验证构建产物。
+CI 在 `.github/workflows/ci.yml`：`verify` 跑四项检查，`desktop` 验证构建产物，`seatbelt` 在 macOS 上运行沙箱回归。
+`test:sandbox` 使用明确文件名，测试缺失不会因 glob 匹配 0 项而假通过；macOS 缺少启动器时集成测试失败。
 
 core 的分层与边界见 [`packages/core/README.md`](./packages/core/README.md)；
 终端入口的参数、REPL 命令与退出码见 [`apps/cli/README.md`](./apps/cli/README.md)。
@@ -208,8 +215,11 @@ cd apps/desktop/node_modules/electron && node install.js
 - 宿主尚未监听 `HarnessHost.closed` 的存储失败结果，界面没有完整的不可用/恢复状态。
 - 桌面主进程把 `@earendil-works/*` 留在打包产物外面（esbuild 内联会破坏它们的 ESM 循环引用，
   实测 `InMemoryCredentialStore is not a constructor`）；打包时需要确认 electron-builder 带上这些依赖。
-- `bash` 的沙箱只管**写**与**网络**：读仍是全局的（`cat ~/.ssh/id_rsa` 不在拦截范围），要挡需要额外的读规则；
-  临时目录（`$TMPDIR`）对沙箱内可写；沙箱也不防「工作区内被破坏」（`rm -rf .`），那属于审批 + 版本控制。
+- `bash` 不是完整读取白名单：只额外屏蔽常见凭证目录和 dotenv，其他位置的敏感文件仍可能被读取并通过工具输出交给模型。
+  禁止命令联网不等于杜绝信息外传。临时目录（包括较宽的 `/private/var/folders` 例外）仍可写，
+  但本应用 `pi-sandbox-*` 策略目录不可被命令改写；工作区内破坏仍需审批、版本控制和备份。
+- 文件工具仍是应用层检查，真实路径解析失败、断链或取消时拒绝操作，但检查与实际 I/O 之间仍有竞态窗口。
+  进程收尾沿用 SDK 的进程组管理，不保证终止主动脱离进程组的程序；运行不可信插件需更强的隔离机制。
 - 沙箱用的是 Apple 的 **deprecated API** `sandbox-exec`（macOS 26.2 实测可用）：将来被移除后需要走容器/VM 路线
   （`docs/沙箱方案.md` §3）。进程内文件工具（`write`/`edit`）走的是应用层路径边界，不在内核沙箱里
   （理由与 Phase 2 的 tools worker 计划见同一文档）。

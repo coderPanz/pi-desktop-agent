@@ -18,6 +18,7 @@
     "gate": "pnpm --filter @pi/desktop gate",
     "cli": "tsx --env-file-if-exists=.env apps/cli/src/main.ts",
     "test": "tsx --tsconfig apps/desktop/tsconfig.json --test \"packages/*/src/**/*.test.ts\" \"packages/extensions/*/src/**/*.test.ts\" \"apps/cli/src/**/*.test.ts\" \"apps/desktop/src/main/**/*.test.ts\"",
+    "test:sandbox": "tsx --tsconfig apps/desktop/tsconfig.json --test packages/core/src/agent/sandbox.test.ts packages/core/src/agent/shell-env.test.ts packages/extensions/coding/src/guard.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/desktop/tsconfig.json",
     "lint": "eslint .",
     "smoke": "node -e \"process.stdout.write('/list\\n/new\\n/list\\n/quit\\n')\" | tsx --env-file-if-exists=.env apps/cli/src/main.ts --memory"

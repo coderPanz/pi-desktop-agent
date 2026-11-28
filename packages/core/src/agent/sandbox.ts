@@ -9,22 +9,18 @@
  * 2. 进程树继承：`sandbox-exec` 先把策略套到自己身上再 exec shell，之后 fork 出来的所有进程同在策略下，子进程只能更严不能更宽；
  * 3. 失败即拒绝：`sandbox-exec` 缺失或 profile 写不出来时，`exec` 直接报错，**不降级成无沙箱执行**。
  */
-import {
-  accessSync,
-  constants,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs"
+import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
 import type { Context } from "@earendil-works/chord"
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env"
-import type { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node" 
+import type { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
 /** Apple 自带的沙箱启动器 */
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+const CREDENTIAL_DIRECTORIES = [
+  ".ssh", ".aws", ".gnupg", ".azure", ".kube", ".config/gcloud", ".config/gh",
+] as const
 export type SandboxMode = "seatbelt" | "off"
 export type SandboxNetwork = "deny" | "allow"
 
@@ -32,8 +28,6 @@ export type SandboxOptions = {
   /** 允许写入的根（工作区真实路径） */
   readonly workspace: string
   readonly network?: SandboxNetwork
-  /** 用来跑命令的 shell */
-  readonly shell?: string
 }
 
 /** 从环境变量读模式：项目里其它开关都是 `PI_*` 风格。缺省在 macOS 上开，其它平台关。 */
@@ -58,7 +52,7 @@ export function sandboxNetworkFromEnv(env: NodeJS.ProcessEnv = process.env): San
 /** `sandbox-exec` 在不在；只在创建环境时探一次。 */
 export function seatbeltAvailable(): boolean {
   try {
-    accessSync(SANDBOX_EXEC, constants.X_OK)
+    fs.accessSync(SANDBOX_EXEC, fs.constants.X_OK)
     return true
   } catch {
     return false
@@ -67,21 +61,45 @@ export function seatbeltAvailable(): boolean {
 
 /**
  * 生成沙箱策略文件
+ * `file-write*` 是**通配别名**，代表一整套文件写入类权限集合，等价于一次性开启下面全部子权限：
+
+- `file-write-data`：写入文件内容
+- `file-write-create`：新建文件
+- `file-write-unlink`：删除文件（rm、unlink）
+- `file-write-mode`：chmod 修改权限
+- `file-write-xattr`：读写扩展属性
+- `file-link` / `file-clone`：硬链接、克隆文件等
+
+>
+> 一句话：**只要是修改文件系统的操作，都归 file-write* 管；读文件不归它管**
  */
 export function seatbeltProfile(network: SandboxNetwork): string {
   const rules = [
     "(version 1)",
-    "(allow default)",
+    "(allow default)", // 【重要】默认先放开所有权限
     "",
     "; 写：默认拒绝，只放开工作区、临时目录与几个必须的设备节点",
-    "(deny file-write*)",
-    "(allow file-write*",
-    '  (subpath (param "WS"))',
-    '  (subpath (param "TMP"))',
-    '  (subpath "/private/var/folders")',
-    '  (literal "/dev/null")',
+    "(deny file-write*)", // 覆盖：单独禁止所有文件写入
+    "(allow file-write*", // 修改文件的系统操作
+    '  (subpath (param "WS"))', // 允许写入 WS 对应的整个工作目录（子路径全部放行）
+    '  (subpath (param "TMP"))', // 允许写入 TMP 对应的临时目录
+    '  (subpath "/private/var/folders")', // 这个路径以及它下面所有子目录都生效 `file-write*` 整套写入权限
+    '  (literal "/dev/null")', // `literal` = 精确匹配这个路径本身
     '  (literal "/dev/stdout")',
     '  (literal "/dev/stderr"))',
+    "",
+    "; 策略材料不能被受限命令改写，避免同一环境后续 exec 加载被放宽的策略",
+    '(deny file-write* (subpath (param "PROFILE_DIR"))',
+    '  (regex #"/pi-sandbox-[^/]+(/|$)"))',
+    "",
+    "; 只屏蔽常见凭证位置，不宣称全局读取隔离；dotenv 示例文件除外",
+    "(deny file-read*",
+    ...CREDENTIAL_DIRECTORIES.flatMap((directory, index) => [
+      `  (subpath (string-append (param "HOME_DIR") "/${directory}"))`,
+      `  (subpath (param "CREDENTIAL_${index}"))`,
+    ]),
+    '  (require-all (regex #"/[.]env([.][^/]+)?$")',
+    '    (require-not (regex #"/[.]env[.]example$"))))',
   ]
   if (network === "deny") {
     rules.push("", "; 网络：出站/入站一律拒绝，防止把读到的东西传出去", "(deny network*)")
@@ -91,7 +109,7 @@ export function seatbeltProfile(network: SandboxNetwork): string {
 
 /** 一个已经准备好的沙箱：profile 文件 + 启动参数前缀。 */
 export type PreparedSandbox = {
-  /** `sandbox-exec -D WS=… -D TMP=… -f profile`，后面再接 shell 与命令。 */
+  /** 参数化的 sandbox-exec 启动前缀，后面接 shell 或目标程序。 */
   readonly prefix: readonly string[]
   /** 删掉临时 profile 文件。 */
   readonly dispose: () => void
@@ -101,11 +119,38 @@ export type PreparedSandbox = {
  * 归一化成真实路径：Seatbelt 按内核解析后的路径匹配，
  * 传 `/var/folders/...`（软链）进去会匹配不上 `/private/var/folders/...`，工作区反而写不了。
  */
-function realPath(target: string): string {
+function realDirectory(target: string): string {
   try {
-    return realpathSync(target)
-  } catch {
-    return path.resolve(target)
+    const real = fs.realpathSync(target)
+    if (!fs.statSync(real).isDirectory()) throw new Error("路径不是目录")
+    return real
+  } catch (cause) {
+    throw new Error(`无法确认沙箱目录的真实路径：${target}，拒绝启用沙箱。`, { cause })
+  }
+}
+
+function credentialPath(target: string): string {
+  let current = target
+  try {
+    while (true) {
+      try {
+        return path.join(fs.realpathSync(current), path.relative(current, target))
+      } catch (cause) {
+        if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause
+        // 只为尚未创建的路径找祖先；断链、权限错误和解析异常都拒绝。
+        try {
+          fs.lstatSync(current)
+          throw new Error("凭证路径存在但无法解析")
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+        }
+        const parent = path.dirname(current)
+        if (parent === current) throw cause
+        current = parent
+      }
+    }
+  } catch (cause) {
+    throw new Error(`无法确认凭证目录的真实路径：${target}，拒绝启用沙箱。`, { cause })
   }
 }
 
@@ -117,41 +162,58 @@ export function prepareSandbox(options: SandboxOptions): PreparedSandbox {
     )
   }
   // 获取真实路径
-  const workspace = realPath(options.workspace)
-  // mkdtempSync(prefix)：在 prefix 后接 6 位随机后缀、建一个新目录（已存在则重试），权限 0700，返回路径
-  const directory = mkdtempSync(path.join(os.tmpdir(), "pi-sandbox-"))
+  const workspace = realDirectory(options.workspace)
+  if (path.dirname(workspace) === workspace) {
+    throw new Error("不能把文件系统根目录作为沙箱工作区。")
+  }
+  const temporary = realDirectory(os.tmpdir())
+  const home = realDirectory(os.homedir())
+  const credentials = CREDENTIAL_DIRECTORIES.flatMap((relative, index) => [
+    "-D", `CREDENTIAL_${index}=${credentialPath(path.join(home, relative))}`,
+  ])
+  const directory = fs.mkdtempSync(path.join(temporary, "pi-sandbox-"))
   /**
    * profile 在这里指沙箱策略文件——具体说是一个 .sb 文件，内容是「允许什么、拒绝什么」的策略文本，由 sandbox-exec -f 读取后交给内核。
    * 拼接策略文件路径， 每个 env 一份：WS / TMP / 网络策略都可能不同
    */
   const profile = path.join(directory, "profile.sb")
   // 写入沙箱策略文件
-  writeFileSync(profile, seatbeltProfile(options.network ?? "deny"), {
-    mode: 0o600, // 文件权限
-  })
+  try {
+    fs.writeFileSync(profile, seatbeltProfile(options.network ?? "deny"), { mode: 0o600 })
+  } catch (cause) {
+    try {
+      fs.rmSync(directory, { recursive: true, force: true })
+    } catch (cleanupError) {
+      throw new AggregateError([cause, cleanupError], "沙箱策略创建与清理均失败。")
+    }
+    throw cause
+  }
 
   return {
     /**
      * -D / -f 是 sandbox-exec 的命令行选项；WS / TMP 是我们自己起的参数名
-     * -f 从文件读策略：告诉 sandbox-exec「策略文本在文件里，需要从文件都，而不是内联方式因为策略文本过长，所以放在了文件中」
+     * -f 从文件读策略：告诉 sandbox-exec「策略文本在文件里，需要从文件读，而不是内联方式因为策略文本过长，所以放在了文件中」
      * -D key=value = 给策略传一个参数，可以给多个（所以我们连着写了两个 -D），例如： (subpath (param "WS"))      ← 取出 -D 传进来的 WS 的值
      *
      */
     prefix: [
       SANDBOX_EXEC,
+      "-D", // -D 标记，下一项为一个参数
+      `WS=${workspace}`, // 参数一：工作空间路径
       "-D",
-      // 工作区：必须是 realpath（内核按解析后的路径匹配），profile 里对应 `(subpath (param "WS"))`
-      `WS=${workspace}`, // 参数一
+      `TMP=${temporary}`,
       "-D",
-      // 临时目录：profile 里对应 `(subpath (param "TMP"))`；
-      `TMP=${realPath(os.tmpdir())}`, // 参数二 
+      `HOME_DIR=${home}`,
+      "-D",
+      `PROFILE_DIR=${directory}`,
+      ...credentials,
       "-f",
       // 本次 env 专属的策略文件（0600），由 mkdtempSync 建的目录包着
       profile,
     ],
     /** 删除整个临时目录（profile + 目录）。`force` 让重复调用不报错（cleanup 可能被调不止一次）。 */
     dispose: () => {
-      rmSync(directory, { recursive: true, force: true })
+      fs.rmSync(directory, { recursive: true, force: true })
     },
   }
 }
@@ -162,9 +224,9 @@ export function sandboxCommand(
   command: string | readonly string[],
   shell: string,
 ): readonly string[] {
-  // `-lc`：登录 shell，保证 PATH 与交互式一致（工具命令习惯这样写）
+  // 不运行登录配置；zsh -f 还跳过用户 .zshenv，防止把凭证重新注入命令环境。
   return typeof command === "string"
-    ? [...sandbox.prefix, shell, "-lc", command]
+    ? [...sandbox.prefix, shell, ...(path.basename(shell) === "zsh" ? ["-f"] : []), "-c", command]
     : [...sandbox.prefix, ...command]
 }
 
@@ -196,14 +258,22 @@ export function withSandbox(inner: NodeExecutionEnv, sandbox: PreparedSandbox, s
     /**
      * bash 操作沙箱保护机制
      * 把原命令包装成「在 sandbox-exec 下跑的命令」
-     * 1. 「在 sandbox-exec 下跑的命令」产出新的 argv，内核只能执行 argv 格式的命令，字符串类型的命令也需要转化为 argv 格式
+     * 1. 「在 sandbox-exec 下跑的命令」产出新的 argv，字符串命令会走 shell 解析，而数组就是 argv——内核 execve 直接执行，不经 shell
      * 输出 case：假设 bash 工具传 "pnpm test"
      * inner.exec([
-          "/usr/bin/sandbox-exec", "-D", "WS=…", "-D", "TMP=…", "-f", "…/profile.sb",
-          "/bin/zsh", "-lc", "pnpm test",
+          "/usr/bin/sandbox-exec", "-D",
+          "WS=…", "-D", "TMP=…", "-f", "…/profile.sb",
+          "/bin/zsh", "-f", "-c", "pnpm test",
         ], options, context)
-     * 2. 
-     *
+     * 2. 内核侧的两次系统调用 execve
+        spawn(program, args)                      # libuv → posix_spawnp → 内核
+        └─ execve("/usr/bin/sandbox-exec", ["-D","WS=…",…,"/bin/zsh","-f","-c","pnpm test"], env)
+              ↓ sandbox-exec 自己先跑起来（此时还没沙箱）
+              ↓ 读 -f 的 profile.sb、把 -D 标记的参数的 WS/TMP 代入、编译 → 给自己打上沙箱标签
+        └─ execve("/bin/zsh", ["-f","-c","pnpm test"], env)      # 标签随进程继承
+              └─ zsh fork/exec pnpm → node → esbuild ……        # 每一层都带着同一个标签
+     * - 第一次 execve 是内核正常的可执行文件加载， 沙箱是"贴在进程上的内核标签"
+       - 第二次系统调用才是真正的执行，执行前需要按照策略文件规则决定是否调用
      */
     exec: (command, options, context) =>
       inner.exec(
@@ -259,10 +329,21 @@ export function withSandbox(inner: NodeExecutionEnv, sandbox: PreparedSandbox, s
     // 在临时目录下建一个临时文件
     createTempFile: (options, context) =>
       inner.createTempFile(options, context),
-    // 收尾：先删 profile 目录，再让内层杀子进程/关 watcher
+    // 先终止受管理的进程，再删策略；任一清理失败都不能跳过另一项。
     cleanup: async (context: Context) => {
-      sandbox.dispose()
-      await inner.cleanup(context)
+      const errors: unknown[] = []
+      try {
+        await inner.cleanup(context)
+      } catch (error) {
+        errors.push(error)
+      }
+      try {
+        sandbox.dispose()
+      } catch (error) {
+        errors.push(error)
+      }
+      if (errors.length === 1) throw errors[0]
+      if (errors.length > 1) throw new AggregateError(errors, "沙箱环境清理失败。")
     },
   }
 }

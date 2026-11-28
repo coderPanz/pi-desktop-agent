@@ -16,53 +16,52 @@ import { isInside, resolveInside, type PathVerdict } from "./paths.ts"
 /** 判定一次请求路径：`ok` 时给出绝对路径。 */
 export type PathGuard = (requested: string, env: ExecutionEnv, context: Context) => Promise<PathVerdict>
 
-/** 往上找真实祖先时最多走几层：写入新文件时会连着几级目录都不存在。 */
-const MAX_ANCESTOR_STEPS = 8
-
-/** 找到 `absolute` 或它最近的已存在祖先的真实路径（解软链）。找不到返回 `undefined`。 */
+/** 仅在确认路径确实不存在时向上找祖先；权限错误、断链和取消不能退回词法放行。 */
 async function canonicalAncestor(
   env: ExecutionEnv,
   absolute: string,
+  workspace: string,
   context: Context,
 ): Promise<string | undefined> {
   let current = absolute
-  for (let step = 0; step < MAX_ANCESTOR_STEPS; step += 1) {
+  while (true) {
     const canonical = await env.canonicalPath(current, context)
     if (canonical.ok) return canonical.value
+    if (canonical.error.code !== "not_found") return undefined
+
+    // realpath 的 ENOENT 也可能来自指向不存在目标的软链；lstat 区分断链与待创建路径。
+    const info = await env.fileInfo(current, context)
+    if (info.ok || info.error.code !== "not_found") return undefined
+    if (current === workspace) return undefined
     const parent = path.dirname(current)
     if (parent === current) return undefined
     current = parent
   }
-  return undefined
 }
 
-/** 造一个绑定到固定工作区根的检查器；真实根路径按环境缓存，成功一次就不再问文件系统。 */
+/** 不按 env.id 缓存根：本地环境共享 id，根失效后不能继续信任旧的解析结果。 */
 export function createPathGuard(workspace: string): PathGuard {
-  const roots = new Map<string, string>()
-
-  // 拿到工作区 【根真实路径】并缓存起来，后续供 请求路径是否在工作区 的判断 场景
-  const canonicalRoot = async (env: ExecutionEnv, context: Context): Promise<string | undefined> => {
-    const key = `${env.id}\u0000${workspace}`
-    const cached = roots.get(key)
-    if (cached !== undefined) return cached
-    // 获取工作区的真实路径
-    const canonical = await env.canonicalPath(workspace, context)
-    if (!canonical.ok) return undefined
-    roots.set(key, canonical.value)
-    return canonical.value
-  }
+  const lexicalRoot = path.resolve(workspace)
 
   return async (requested, env, context) => {
     const lexical = resolveInside(workspace, requested, env.cwd)
     if (!lexical.ok) return lexical
 
-    const root = await canonicalRoot(env, context)
-    // 连根都真实化不了：只能信词法判定，工具自己会因文件不存在而失败。
-    if (root === undefined) return lexical
+    const root = await env.canonicalPath(lexicalRoot, context)
+    if (!root.ok) {
+      return { ok: false, reason: "无法确认工作区根的真实目录，拒绝执行文件操作。" }
+    }
+    // 根可为有效目录软链；最终目标必须可确认是目录。
+    const rootInfo = await env.fileInfo(root.value, context)
+    if (!rootInfo.ok || rootInfo.value.kind !== "directory") {
+      return { ok: false, reason: "工作区根不是可确认的目录，拒绝执行文件操作。" }
+    }
 
-    const real = await canonicalAncestor(env, lexical.absolute, context)
-    if (real === undefined) return lexical
-    if (isInside(root, real)) return lexical
+    const real = await canonicalAncestor(env, lexical.absolute, lexicalRoot, context)
+    if (real === undefined) {
+      return { ok: false, reason: `无法确认路径 ${requested} 的真实边界，拒绝执行文件操作。` }
+    }
+    if (isInside(root.value, real)) return lexical
 
     return {
       ok: false,

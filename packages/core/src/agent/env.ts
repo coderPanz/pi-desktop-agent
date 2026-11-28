@@ -8,12 +8,13 @@ import type { EnvTarget } from "@earendil-works/pi-durable"
 
 import { prepareSandbox, sandboxModeFromEnv, sandboxNetworkFromEnv, withSandbox } from "./sandbox.ts"
 import type { SandboxMode, SandboxNetwork } from "./sandbox.ts"
+import { restrictShellEnvironment } from "./shell-env.ts"
 
 // node 环境配置
 export type NodeEnvOptions = {
   readonly workspace: string // 工作区目录
   readonly shellPath?: string // shell 路径
-  readonly shellEnv?: NodeJS.ProcessEnv // shell 环境变量
+  readonly shellEnv?: NodeJS.ProcessEnv // 仅接受 shell-env.ts 允许清单内的环境变量
   readonly sandbox?: SandboxMode // sandbox、不设 PI_SANDBOX，macOS 为 "seatbelt"，其它平台 "off"
   readonly sandboxNetwork?: SandboxNetwork // 沙箱网络策略，缺省默认 deny
 }
@@ -39,8 +40,9 @@ export function createNodeEnv(cwd: string, options: CreateNodeEnvOptions = {}): 
     ...(options.shellPath === undefined
       ? {}
       : { shellPath: options.shellPath }),
-    ...(options.shellEnv === undefined ? {} : { shellEnv: options.shellEnv }),
   })
+  // 即使显式关闭内核沙箱，也不应自动把宿主凭证交给 shell
+  restrictShellEnvironment(env, options.shellEnv)
 
   const mode = options.sandbox ?? sandboxModeFromEnv()
   // 如果沙箱没有启用-则无需处理直接返回
@@ -62,7 +64,6 @@ export function createNodeEnv(cwd: string, options: CreateNodeEnvOptions = {}): 
   const sandbox = prepareSandbox({
     workspace: options.workspace ?? cwd,
     network: options.sandboxNetwork ?? sandboxNetworkFromEnv(),
-    shell,
   })
   // 装饰器：沙箱包裹装饰后的 pi node 执行环境
   return withSandbox(env, sandbox, shell)
