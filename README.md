@@ -59,6 +59,16 @@ pnpm cli -p "看一下 package.json 有哪些脚本"    # 一次性提问后退�
 
 模型能用的工具：`read`、`list_dir`、`grep`、`glob`、`write`、`edit`、`bash`。
 
+### 项目上下文
+
+`coding` 扩展会把工作区的约定注入 system prompt（每次请求前渲染，不落库）：
+
+- `AGENTS.md`（截到 4000 字，模型需要全文可自己 `read`）
+- `package.json` 的项目名与脚本（最多 20 条，提示「用 bash 执行」）
+- 顶层结构（最多 40 项，跳过 `node_modules`/`.git`/构建产物）
+
+按文件 mtime 缓存，改了约定下次请求就生效；工作区什么都没有时不注入（不占上下文）。
+
 `grep` / `glob` 是只读检索：只遍历工作区（跳过 `node_modules`、`.git`、构建产物与软链）、
 跳过二进制与超大文件，默认按字面子串匹配（`regex: true` 才当正则）。它们与 `read`/`list_dir` 一样直接放行，
 崩溃后可安全重跑。会遵守工作区**根** `.gitignore` 的常见规则（注释、目录、名字、锚定路径、`*`/`**`/`?`）；

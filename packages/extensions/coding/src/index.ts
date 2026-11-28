@@ -31,6 +31,8 @@ import { classify, describeCall, type PolicyOptions, type ToolCallView } from ".
 import { toolError } from "./results.ts"
 // list_dir 工具
 import { createListDirTool } from "./tools/list-dir.ts"
+// 项目上下文（AGENTS.md / scripts / 顶层结构）
+import { projectContextSection } from "./context.ts"
 // grep / glob 检索工具
 import { createGlobTool, createGrepTool } from "./tools/search.ts"
 
@@ -177,6 +179,8 @@ export function createCodingExtension(options: CodingExtensionOptions): Extensio
   return defineExtension({
     name: "coding",
     tools,
+    // 把工作区约定注入 system prompt：模型不必先 list_dir 摸情况
+    sections: [projectContextSection(options.workspace)],
     hooks: [approvals], // 工具调用前置审批
   })
 }
