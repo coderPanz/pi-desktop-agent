@@ -427,12 +427,12 @@ export class SessionManager {
       context,
     )
     // 这一轮的 git 起点：只记一个游离 commit，diff 之后现算，不落盘
-    await this.#recordBaseline(conversation.id, submission.id, context)
+    await this.recordBaseline(conversation.id, submission.id, context)
     return submission
   }
 
   /** 记录本轮起点；非 git 仓库写空串（界面据此提示无法显示 diff）。失败不影响提交本身。 */
-  async #recordBaseline(conversationId: ConversationId, submissionId: number, context: Context): Promise<void> {
+  async recordBaseline(conversationId: ConversationId, submissionId: number, context: Context = BACKGROUND_CONTEXT): Promise<void> {
     if (this.#workspace === undefined) return
     const baseline = await createBaseline(this.#workspace).catch(() => undefined)
     await this.#harness.commit(async tx => {
@@ -448,7 +448,8 @@ export class SessionManager {
     if (this.#workspace === undefined) return { submissionId: 0, repo: false, files: [], truncated: false }
     const doc = await this.#harness.snapshot(AppChangesDoc, conversationId, context)
     const baseline = doc === undefined || doc.baseline === "" ? undefined : doc.baseline
-    const result = await summary(this.#workspace, baseline)
+    // 用基线时间判断“哪些未跟踪文件是本轮新建的”
+    const result = await summary(this.#workspace, baseline, doc?.at ?? undefined)
     return {
       submissionId: doc?.submissionId ?? 0,
       repo: result.repo,

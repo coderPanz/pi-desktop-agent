@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { failedInputText, hostUnavailable, submissionFailure } from "@pi/shared-types"
-import type { ConversationId } from "@pi/shared-types"
+import type { ConversationId, ViewSnapshot } from "@pi/shared-types"
 
 import { ApprovalBar } from "./components/ApprovalBar.tsx"
 import { Composer } from "./components/Composer.tsx"
@@ -18,10 +18,12 @@ import {
   toolSlots,
 } from "./docs.ts"
 import { invoke, IpcCallError } from "./ipc.ts"
+import { toolCallPath, toolResultCallId } from "./docs.ts"
 import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
 import { useModelSettings } from "./hooks/useModelSettings.ts"
 import { useApprovals, useHost } from "./hooks/useHost.ts"
+import { useChanges } from "./hooks/useChanges.ts"
 import { useCountdownAt } from "./hooks/useCountdown.ts"
 import { useNow } from "./hooks/useNow.ts"
 import { useSubmission } from "./hooks/useSubmission.ts"
@@ -51,6 +53,8 @@ export function App() {
   const approvals = useApprovals(selected, !unavailable)
   // 用于追踪：用户发出去的指令 的生命周期
   const submission = useSubmission(selected, !unavailable)
+  // 本轮改动：统计随条目数刷新（一轮结束条目会变），diff 点开才拉
+  const changes = useChanges(selected, conversation.snapshot?.entries.length ?? 0)
 
   // react 使用的是【引用比较】底层为 Object.is
   /**
@@ -450,6 +454,8 @@ export function App() {
             onOpenFile={(path) => {
               void run("打开文件", async () => { await invoke("file.open", { path }) })
             }}
+            changes={changes}
+            touchedPaths={touchedPaths(snapshot)}
             onCopyPath={(path) => {
               void run("复制路径", async () => { await invoke("clipboard.copy", { text: path }) })
             }}
@@ -598,4 +604,20 @@ function DebugBar(props: {
       </button>
     </div>
   )
+}
+
+/**
+ * 本轮工具调用涉及到的文件路径（去重、保序）。
+ * 非 git 工作区没有 diff，但至少能告诉用户“这轮动了哪些文件”——这些路径本来就在条目里，不用落库。
+ */
+function touchedPaths(snapshot: ViewSnapshot | undefined): readonly string[] {
+  if (snapshot === undefined) return []
+  const paths: string[] = []
+  for (const entry of snapshot.entries) {
+    const callId = toolResultCallId(entry)
+    if (callId === undefined) continue
+    const path = toolCallPath(snapshot, callId)
+    if (path !== undefined && !paths.includes(path)) paths.push(path)
+  }
+  return paths
 }

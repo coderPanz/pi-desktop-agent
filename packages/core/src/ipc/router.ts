@@ -263,6 +263,8 @@ export class IpcRouter {
         )
         // 一提交就算「开始」：侧栏据此把这个会话从草稿带进「最近」，并按活跃时间排在前面
         await this.#manager.touch(id, context)
+        // 记下这一轮的 git 起点，供「本轮改动」现算 diff
+        await this.#manager.recordBaseline(id, submission.id, context)
         return { submissionId: submission.id } as IpcResponse<K>
       }
 

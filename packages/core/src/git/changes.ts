@@ -8,6 +8,7 @@
  * 约束：只跑只读命令（`rev-parse` / `stash create` / `diff`），argv 形式不过 shell，cwd 固定在工作区。
  */
 import { execFile } from "node:child_process"
+import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 
@@ -24,8 +25,10 @@ async function git(workspace: string, args: readonly string[]): Promise<string |
       windowsHide: true,
     })
     return stdout
-  } catch {
-    return undefined
+  } catch (error) {
+    // `git diff` / `diff --no-index` 用退出码 1 表示“有差异”，这不是失败。
+    const stdout = (error as { stdout?: unknown }).stdout
+    return typeof stdout === "string" && stdout !== "" ? stdout : undefined
   }
 }
 
@@ -65,8 +68,41 @@ export type ChangeSummary = {
   readonly truncated: boolean
 }
 
-/** 相对仓库根统计改动；`baseline` 缺失时返回空列表，由界面提示“没有基线”。 */
-export async function summary(workspace: string, baseline: string | undefined): Promise<ChangeSummary> {
+/**
+ * 工作区里未跟踪的文件（相对仓库根）。
+ * `git diff` 看不到它们，所以 Agent 新建文件必须单独补，否则卡片会漏。
+ */
+async function untrackedPaths(workspace: string): Promise<readonly string[]> {
+  const out = await git(workspace, ["status", "--porcelain", "--untracked-files=all"])
+  if (out === undefined) return []
+  const paths: string[] = []
+  for (const line of out.split("\n")) {
+    if (!line.startsWith("?? ")) continue
+    const file = line.slice(3).trim()
+    if (file !== "") paths.push(file)
+  }
+  return paths
+}
+
+/** 新建文件的“新增行数”；二进制文件返回 undefined。 */
+async function newFileStats(absolute: string): Promise<{ added: number; binary: boolean } | undefined> {
+  try {
+    const content = await readFile(absolute)
+    if (content.includes(0)) return { added: 0, binary: true }
+    const text = content.toString("utf8")
+    const added = text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0)
+    return { added, binary: false }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 相对仓库根统计改动；`baseline` 缺失时返回空列表，由界面提示“没有基线”。
+ * `sinceMs` 是这一轮的起点时间：只把**这之后才创建**的未跟踪文件算作本轮新增，
+ * 避免把用户动手前就存在、还没 `git add` 的文件算进去。
+ */
+export async function summary(workspace: string, baseline: string | undefined, sinceMs?: number): Promise<ChangeSummary> {
   const root = await repoRoot(workspace)
   if (root === undefined) return { repo: false, files: [], truncated: false }
   if (baseline === undefined) return { repo: true, root, files: [], truncated: false }
@@ -91,6 +127,21 @@ export async function summary(workspace: string, baseline: string | undefined): 
       binary,
     })
   }
+  // 补上本轮新建、git 还没有跟踪的文件
+  if (sinceMs !== undefined) {
+    for (const file of await untrackedPaths(workspace)) {
+      if (files.length >= 200) {
+        truncated = true
+        break
+      }
+      const absolute = path.join(root, file)
+      const info = await stat(absolute).catch(() => undefined)
+      if (info === undefined || info.mtimeMs < sinceMs) continue
+      const stats = await newFileStats(absolute)
+      if (stats === undefined) continue
+      files.push({ path: file, added: stats.added, removed: 0, binary: stats.binary })
+    }
+  }
   files.sort((left, right) => left.path.localeCompare(right.path))
   return { repo: true, root, files, truncated }
 }
@@ -103,7 +154,11 @@ export async function filePatch(
 ): Promise<{ readonly patch: string; readonly truncated: boolean } | undefined> {
   const relative = path.normalize(file)
   if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined
-  const out = await git(workspace, ["diff", baseline, "--", relative])
+  // 未跟踪的新文件不在 `git diff <baseline>` 里，用 --no-index 对空文件比出“新增”补丁
+  const tracked = await git(workspace, ["ls-files", "--error-unmatch", "--", relative])
+  const out = tracked === undefined
+    ? await git(workspace, ["diff", "--no-index", "--", "/dev/null", relative])
+    : await git(workspace, ["diff", baseline, "--", relative])
   if (out === undefined) return undefined
   if (out.length <= MAX_PATCH_BYTES) return { patch: out, truncated: false }
   return { patch: out.slice(0, MAX_PATCH_BYTES), truncated: true }

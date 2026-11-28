@@ -4,13 +4,14 @@
 import { useEffect } from "react"
 
 import { EntryKind, entryText, liveGenerationText } from "@pi/shared-types"
-import type { ViewEntry, ViewSnapshot } from "@pi/shared-types"
+import type { ChangeSummaryView, ViewEntry, ViewSnapshot } from "@pi/shared-types"
 
 import { toolCallPath, toolResultCallId } from "../docs.ts"
 import type { QueuedItem, ToolSlot } from "../docs.ts"
 import { useStickToBottom } from "../hooks/useStickToBottom.ts"
 import { AssistantAvatar } from "./AssistantAvatar.tsx"
 import { Icon } from "./Icon.tsx"
+import { ChangeSummaryCard } from "./ChangeSummaryCard.tsx"
 import { MessageRow } from "./MessageRow.tsx"
 import { StreamingMarkdown } from "./StreamingMarkdown.tsx"
 import { ToolCard } from "./ToolCard.tsx"
@@ -24,10 +25,13 @@ export type MessageListProps = {
   readonly onOpenFile: (path: string) => void
   /** 复制路径到剪贴板。 */
   readonly onCopyPath: (path: string) => void
+  /** 本轮改动（git 现算）；非 git 时用 `touchedPaths` 列表降级展示。 */
+  readonly changes: { readonly summary: ChangeSummaryView | undefined; readonly loadDiff: (path: string) => Promise<string | undefined> }
+  readonly touchedPaths: readonly string[]
 }
 
 // 已提交历史 + 实时生成 + 实时工具状态 + 排队输入统一组织成对话区 UI 的组件
-export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCopyPath }: MessageListProps) {
+export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCopyPath, changes, touchedPaths }: MessageListProps) {
   const entries = snapshot === undefined ? [] : visibleEntries(snapshot.entries)
   const liveText = snapshot === undefined ? undefined : liveGenerationText(snapshot)
   const lastAssistant = snapshot === undefined ? undefined : lastAssistantText(snapshot.entries)
@@ -85,6 +89,15 @@ export function MessageList({ snapshot, running, tools, queued, onOpenFile, onCo
             </div>
           ) : null}
           {running && !streaming ? <p className="flex items-center gap-2 text-[12px] text-secondary"><AssistantAvatar className="size-6" />生成中…</p> : null}
+
+          {empty ? null : (
+            <ChangeSummaryCard
+              summary={changes.summary}
+              touchedPaths={touchedPaths}
+              onOpenFile={onOpenFile}
+              loadDiff={changes.loadDiff}
+            />
+          )}
 
           {queued.length === 0 ? null : (
             <div className="rounded-xl border border-accent/10 bg-selection/35 px-4 py-3">
