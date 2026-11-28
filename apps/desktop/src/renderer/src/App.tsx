@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { failedInputText, hostUnavailable, submissionFailure } from "@pi/shared-types"
-import type { ConversationId, ViewSnapshot } from "@pi/shared-types"
+import type { ConversationId, SubappProposal, ViewSnapshot } from "@pi/shared-types"
 
 import { ApprovalBar } from "./components/ApprovalBar.tsx"
 import { Composer } from "./components/Composer.tsx"
@@ -10,6 +10,7 @@ import { Icon } from "./components/Icon.tsx"
 import { MessageList } from "./components/MessageList.tsx"
 import { HostFailureBanner } from "./components/HostFailureBanner.tsx"
 import { ModelSettingsDialog } from "./components/ModelSettingsDialog.tsx"
+import { SubappInstallDialog } from "./components/SubappInstallDialog.tsx"
 import {
   compactionFailure,
   generationFailure,
@@ -17,7 +18,7 @@ import {
   queuedItems,
   toolSlots,
 } from "./docs.ts"
-import { invoke, IpcCallError } from "./ipc.ts"
+import { invoke, IpcCallError, subscribe } from "./ipc.ts"
 import { toolCallPath, toolResultCallId } from "./docs.ts"
 import { conversationAncestors } from "./lib/conversationTree.ts"
 import { useConversation } from "./hooks/useConversation.ts"
@@ -43,6 +44,8 @@ export function App() {
   )
   // 操作失败的提示文案
   const [error, setError] = useState<string | undefined>(undefined)
+  // 主进程在 Agent 调用 subapp.propose 后推送；只有用户在弹层点击安装才会消费 token。
+  const [subappProposal, setSubappProposal] = useState<SubappProposal | undefined>(undefined)
   // 当前界面正在进行的动作，本质是一个互斥锁 + 状态标记
   const [busyAction, setBusyAction] = useState<string | undefined>(undefined)
   // 侧栏树里被折叠起来的会话（展开状态只活在界面内存，重启回到全展开）
@@ -90,6 +93,8 @@ export function App() {
       return next
     })
   }, [host.conversations, selected])
+
+  useEffect(() => subscribe("subapp.proposed", proposal => setSubappProposal(proposal)), [])
 
   // 会话只读副本
   const snapshot = conversation.snapshot
@@ -300,6 +305,13 @@ export function App() {
           onClearKey={modelSettings.clearKey}
         />
       ) : null}
+      {subappProposal === undefined ? null : (
+        <SubappInstallDialog
+          proposal={subappProposal}
+          onClose={() => setSubappProposal(undefined)}
+          onInstalled={() => undefined}
+        />
+      )}
 
       <HostFailureBanner status={host.status} restarting={busyAction === "重启"} onRestart={() => {
         void run("重启", host.restart)

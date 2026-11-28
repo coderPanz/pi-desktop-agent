@@ -56,6 +56,26 @@ export type {
   ToolStatus,
 } from "./domain.ts"
 
+export type {
+  AppSubapp,
+  AppSubapps,
+  InstalledSubappManifest,
+  SubappCandidateInput,
+  SubappChanged,
+  RequestedSubappCapabilities,
+  SubappEnforcement,
+  SubappManifestDraft,
+  SubappPreview,
+  SubappProposal,
+  SubappSchemaVersion,
+  SubappSmokeResult,
+  SubappSmokeStatus,
+  SubappStaticCheck,
+  SubappStatus,
+  SubappUiDeclaration,
+  SubappVersionFiles,
+} from "./subapps.ts"
+
 export type { InputSubmissionView } from "./submission.ts"
 export { failedInputText, mergeSubmissionView, submissionFailure } from "./submission.ts"
 export { hostUnavailable, mergeHostStatus } from "./host-status.ts"

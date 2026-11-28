@@ -5,6 +5,7 @@
 import type { ApprovalView, HostStatus } from "./domain.ts"
 import type { ConversationId, ViewFrame } from "./frame.ts"
 import type { InputSubmissionView } from "./submission.ts"
+import type { SubappChanged, SubappProposal } from "./subapps.ts"
 
 /** 一个会话的待审批集合变化：`pending` 即为当前全量（空数组表示清空）。 */
 export type ApprovalPush = {
@@ -26,6 +27,10 @@ export type PushMap = {
   approval: ApprovalPush
   // 会话标题：后台摘要生成好了就推一条，列表不用轮询
   "conv.title": { readonly conversationId: ConversationId; readonly title: string }
+  // Agent 生成候选且主进程完成检查后推送；renderer 再按 candidateId 拉确认页和安装 token。
+  "subapp.proposed": SubappProposal
+  // 子应用安装、启停、加载失败或删除后推送；界面收到后重新拉取完整列表。
+  "subapp.changed": SubappChanged
 }
 
 // 所有 pushmap key 的联合类型：`view` / `submission` / `host.status` / `approval` 作为推送通道名

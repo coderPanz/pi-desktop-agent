@@ -39,6 +39,11 @@ const CHANNEL_LIST = [
   "doc.get", // 读一份 `app.*` 文档的当前值
   "approval.list", // 该会话当前待审批的所有请求
   "approval.respond", // 用户答复该审批
+  "subapp.list", // 已安装子应用列表
+  "subapp.preview", // 候选包静态检查与 smoke 预览
+  "subapp.install", // 用户确认后以一次性 token 安装
+  "subapp.setEnabled", // 启用 / 禁用
+  "subapp.remove", // 删除
 ] as const satisfies readonly IpcChannel[]
 
 type MissingChannel = Exclude<IpcChannel, (typeof CHANNEL_LIST)[number]>
@@ -83,7 +88,7 @@ export function registerIpc(options: RegisterIpcOptions): () => void {
        * handle方法：返回命令的调用结果
        * IpcRouter 在构造时在应用启动阶段，并传入了 Harness-manager 所以可以进行进行任务分发执行。
        */
-      return await runtime.router.handle(channel as IpcChannel, request)
+      return await runtime.router.handle(channel as IpcChannel, request, undefined, String(event.sender.id))
     },
   )
 

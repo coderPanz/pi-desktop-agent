@@ -22,7 +22,11 @@
     "lint": "eslint .",
     "smoke": "node -e \"process.stdout.write('/list\\n/new\\n/list\\n/quit\\n')\" | tsx --env-file-if-exists=.env apps/cli/src/main.ts --memory",
     "p0:subapps": "tsx packages/core/src/dev/subapp-p0.ts",
-    "p0:subapps:package": "pnpm package:dir && tsx apps/desktop/build/run-subapp-p0-package.ts"
+    "p0:subapps:package": "pnpm package:dir && tsx apps/desktop/build/run-subapp-p0-package.ts",
+    "m1:subapps:foundation": "tsx apps/desktop/build/subapp-m1-1-foundation.ts",
+    "m1:subapps:candidate": "tsx apps/desktop/build/subapp-m1-2-candidate.ts",
+    "m1:subapps:installer": "tsx apps/desktop/build/subapp-m1-3-installer.ts",
+    "m1:subapps:service": "tsx apps/desktop/build/subapp-m1-3-service.ts"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.4.0",

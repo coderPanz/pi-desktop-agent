@@ -34,6 +34,7 @@ import { createCodingExtension } from "@pi/ext-coding"
 import type { HostInfo, PushMap, PushChannel, ViewFrame } from "@pi/shared-types"
 
 import { createSafeStorageSecret } from "./secret-store.ts"
+import { SubappService } from "./subapps/service.ts"
 
 // 桌面端运行时配置
 export type DesktopRuntimeOptions = {
@@ -80,6 +81,8 @@ export class DesktopRuntime {
   readonly hub: FrameHub // FrameHub（监听会话变更，统一进行发帧）
   readonly approvals: ApprovalBroker // 审批
   readonly router: IpcRouter // 路由处理
+  /** 子应用生命周期服务；M1-4 将经 IPC 暴露给渲染进程。 */
+  readonly subapps: SubappService
   readonly info: HostInfo // 宿主信息
   readonly #publish: DesktopRuntimeOptions["publish"] // 推送出口： 用于运行时想把某个状态告诉界面时
   readonly #stopSink: () => void // 停止帧 sink ：用于停止向接受者推送会话帧
@@ -96,6 +99,7 @@ export class DesktopRuntime {
     hub: FrameHub // FrameHub（监听会话变更，统一进行发帧）
     approvals: ApprovalBroker // 审批
     router: IpcRouter // 路由处理
+    subapps: SubappService
     info: HostInfo // 宿主信息
     stopSink: () => void // 停止帧 sink ：用于停止向接受者推送会话帧
     manager: SessionManager
@@ -105,6 +109,7 @@ export class DesktopRuntime {
     this.hub = input.hub
     this.approvals = input.approvals
     this.router = input.router
+    this.subapps = input.subapps
     this.info = input.info
     this.#publish = input.options.publish
     this.#stopSink = input.stopSink
@@ -178,6 +183,16 @@ export class DesktopRuntime {
       settings: () => ({ progress: { partialIntervalMs: 100 } }),
       log,
     })
+
+    // 读取 durable 记录并恢复已启用子应用；单个子应用损坏不会阻塞整个桌面运行时。
+    const subapps = new SubappService({
+      paths,
+      harness: host.harness,
+      registry,
+      onChanged: change => publish("subapp.changed", change),
+      onProposed: proposal => publish("subapp.proposed", proposal),
+    })
+    await subapps.restore().catch(error => log("subapp restore failed", { error: String(error) }))
 
     // 配置就绪后 Harness 才拿得到真实模型；没配置时仍可开窗，发消息会报 no_model。
     modelRef.current = new ModelSettings({
@@ -260,6 +275,7 @@ export class DesktopRuntime {
       models: modelRef.current,
       workspace: paths.workspace,
       copyText: text => clipboard.writeText(text),
+      subapps,
       openFile: async target => {
         // 空字符串表示成功；返回错误信息时抛出去，让界面看到原因。
         const error = await shell.openPath(target)
@@ -283,6 +299,7 @@ export class DesktopRuntime {
       hub,
       approvals: broker,
       router,
+      subapps,
       info,
       stopSink,
       manager,

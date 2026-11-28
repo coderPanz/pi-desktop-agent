@@ -22,6 +22,8 @@ import type {
   IpcResult,
   JsonObject,
   ModelSettingsView,
+  SubappPreview,
+  AppSubapp,
   OpenedView,
   WhenBusy,
 } from "@pi/shared-types"
@@ -33,6 +35,15 @@ import type { FrameHub } from "../frames/frame-hub.ts"
 import type { SessionManager } from "../session/manager.ts"
 import type { HarnessHost } from "../harness/host.ts"
 import type { ModelSettings } from "../agent/model-settings.ts"
+
+/** 子应用实现位于桌面主进程；core 只依赖这份 IPC 所需的结构接口。 */
+export type SubappIpcService = {
+  list(context?: Context): Promise<AppSubapp[]>
+  preview(candidateId: string, sender: string): Promise<SubappPreview>
+  install(input: { installToken: string; sender: string; forceSmokeFailure?: boolean; context?: Context }): Promise<AppSubapp>
+  setEnabled(slug: string, enabled: boolean, context?: Context): Promise<AppSubapp>
+  remove(slug: string, context?: Context): Promise<void>
+}
 
 // 路由配置选项
 export type IpcRouterOptions = {
@@ -51,6 +62,8 @@ export type IpcRouterOptions = {
   readonly openFile?: (path: string) => Promise<void>
   /** 写剪贴板的实际动作（Electron 里是 `clipboard.writeText`）。 */
   readonly copyText?: (text: string) => void
+  /** 可选的子应用服务；CLI 等非桌面宿主不传。 */
+  readonly subapps?: SubappIpcService
 }
 
 export class IpcRouter {
@@ -65,6 +78,7 @@ export class IpcRouter {
   readonly #workspace: string | undefined
   readonly #openFile: IpcRouterOptions["openFile"]
   readonly #copyText: IpcRouterOptions["copyText"]
+  readonly #subapps: SubappIpcService | undefined
   #restarting: Promise<void> | undefined
 
   constructor(options: IpcRouterOptions) {
@@ -79,6 +93,7 @@ export class IpcRouter {
     this.#workspace = options.workspace
     this.#openFile = options.openFile
     this.#copyText = options.copyText
+    this.#subapps = options.subapps
   }
 
   /** 处理渲染进程发过来的命令 */
@@ -86,9 +101,10 @@ export class IpcRouter {
     channel: K, // 命令名
     request: unknown, // 请求参数
     context: Context = BACKGROUND_CONTEXT, // 中断信号上下文
+    sender = "local",
   ): Promise<IpcResult<K>> {
     try {
-      return { ok: true, value: await this.#dispatch(channel, request, context) }
+      return { ok: true, value: await this.#dispatch(channel, request, context, sender) }
     } catch (error) {
       const unavailable = this.#host.unavailableStatus
       if (channel === "app.status" && unavailable !== undefined) {
@@ -107,6 +123,7 @@ export class IpcRouter {
     channel: K,
     request: unknown,
     context: Context,
+    sender: string,
   ): Promise<IpcResponse<K>> {
     const input = asObject(request)
     // 连只读查询也不能再访问已关闭的库；保留的历史来自渲染进程已有副本。
@@ -446,6 +463,36 @@ export class IpcRouter {
         } as IpcResponse<K>
       }
 
+      case "subapp.list":
+        return await this.#requireSubapps().list(context) as IpcResponse<K>
+
+      case "subapp.preview":
+        return await this.#requireSubapps().preview(requiredText(input, "candidateId"), sender) as IpcResponse<K>
+
+      case "subapp.install": {
+        const force = input["forceSmokeFailure"]
+        if (force !== undefined && typeof force !== "boolean") {
+          throw new IpcError("INVALID_ARGUMENT", "forceSmokeFailure 必须是布尔值。")
+        }
+        return await this.#requireSubapps().install({
+          installToken: requiredText(input, "installToken"),
+          sender,
+          ...(force === undefined ? {} : { forceSmokeFailure: force }),
+          context,
+        }) as IpcResponse<K>
+      }
+
+      case "subapp.setEnabled":
+        return await this.#requireSubapps().setEnabled(
+          requiredText(input, "slug"),
+          requiredBoolean(input, "enabled"),
+          context,
+        ) as IpcResponse<K>
+
+      case "subapp.remove":
+        await this.#requireSubapps().remove(requiredText(input, "slug"), context)
+        return {} as IpcResponse<K>
+
       default: {
         // 命令表里加了名字但这里没实现：明确报错，不要静默返回 undefined。
         const exhaustive: never = channel
@@ -485,6 +532,11 @@ export class IpcRouter {
   #requireModels(): ModelSettings {
     if (this.#models === undefined) throw new IpcError("UNKNOWN", "当前宿主未配置模型设置服务。")
     return this.#models
+  }
+
+  #requireSubapps(): SubappIpcService {
+    if (this.#subapps === undefined) throw new IpcError("UNKNOWN", "当前宿主不支持子应用。")
+    return this.#subapps
   }
 
   /** 给界面的视图：密钥只说有无，不回传值；env 生效时锁定编辑。 */

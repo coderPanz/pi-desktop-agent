@@ -14,7 +14,7 @@
  *   title.ts      app.title       侧栏标题（第一条用户消息 / 它的 AI 摘要）
  *   activity.ts   app.activity    会话最近一次活跃的墙钟时间（「最近」排序与时间节点）
  *
- * 后续（S7–S9，用到再写，现在写就是猜）：app.kb / app.toolbox / app.smartui
+ * 后续（S7–S9，用到再写，现在写就是猜）：app.kb / app.smartui；app.subapps 已在子应用 M1 中落地。
  */
 export type { AppLocale, AppSettings, AppTheme } from "./settings.ts"
 export { AppSettingsDoc } from "./settings.ts"
@@ -41,3 +41,6 @@ export type { AppActivity } from "./activity.ts"
 export { AppActivityDoc } from "./activity.ts"
 export type { AppChanges } from "./changes.ts"
 export { AppChangesDoc } from "./changes.ts"
+
+export type { AppSubapp, AppSubapps } from "@pi/shared-types"
+export { AppSubappsDoc } from "./subapps.ts"

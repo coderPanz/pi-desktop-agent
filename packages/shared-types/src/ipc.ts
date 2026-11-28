@@ -6,6 +6,7 @@ import type { IpcErrorPayload } from "./errors.ts"
 import type { ConversationId, EntryId, OpenedView } from "./frame.ts"
 import type { JsonObject } from "./json.ts"
 import type { InputSubmissionView } from "./submission.ts"
+import type { AppSubapp, SubappPreview } from "./subapps.ts"
 
 /** 忙时策略：`followUp` 等当前轮结束、`steer` 插到工具轮边界、`reject` 直接拒。 */
 export type WhenBusy = "steer" | "followUp" | "reject"
@@ -178,6 +179,29 @@ export type IpcMap = {
   "approval.respond": {
     readonly request: { readonly id: string; readonly approved: boolean }
     readonly response: { readonly decision: ApprovalDecision }
+  }
+  /** 读取已安装子应用，包含 failed / disabled，供确认页与后续侧栏使用。 */
+  "subapp.list": {
+    readonly request: Record<string, never>
+    readonly response: readonly AppSubapp[]
+  }
+  /** 由 Agent proposal id 获取确认页内容，并为可信 renderer 签发一次性安装 token。 */
+  "subapp.preview": {
+    readonly request: { readonly candidateId: string }
+    readonly response: SubappPreview
+  }
+  /** 只接受 preview 生成的 token；不接受 renderer 回传源码或 manifest。 */
+  "subapp.install": {
+    readonly request: { readonly installToken: string; readonly forceSmokeFailure?: boolean }
+    readonly response: AppSubapp
+  }
+  "subapp.setEnabled": {
+    readonly request: { readonly slug: string; readonly enabled: boolean }
+    readonly response: AppSubapp
+  }
+  "subapp.remove": {
+    readonly request: { readonly slug: string }
+    readonly response: Record<string, never>
   }
 }
 

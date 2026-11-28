@@ -33,7 +33,9 @@ export type BridgeSubscribe = <K extends PushChannel>(
 
 /** 主进程与渲染进程之间的全部通道名：preload 用它做白名单。 */
 export const IPC_INVOKE_CHANNEL = "pi:invoke"
-export const PUSH_CHANNELS: readonly PushChannel[] = ["view", "host.status", "approval", "submission", "conv.title"]
+export const PUSH_CHANNELS: readonly PushChannel[] = [
+  "view", "host.status", "approval", "submission", "conv.title", "subapp.proposed", "subapp.changed",
+]
 
 export type PiBridge = {
   readonly invoke: BridgeInvoke
